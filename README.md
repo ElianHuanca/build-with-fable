@@ -1,10 +1,16 @@
 # Dengue Invaders 2D
 
 Prototipo web educativo en 2D (vista superior) para estudiantes de Santa Cruz, Bolivia.
-El jugador recorre un barrio ficticio inspirado en Equipetrol, detecta criaderos del
-mosquito *Aedes aegypti* (llanta, tanque, balde, botella, florero) y los elimina.
-Cada criadero limpio muestra un dato educativo y suma puntos; al limpiar todos, el
-barrio queda "protegido" y se puede compartir una foto antes/después.
+El jugador es un **agente del SEDES** en un barrio ficticio inspirado en Equipetrol, con una
+**jornada de 4 minutos**: debe detectar y eliminar los criaderos del mosquito *Aedes aegypti*
+(llanta, tanque, balde, botella, florero) y, además, fumigar los **brotes de mosquitos** que van
+apareciendo con el tiempo antes de que crezcan. Una **estación SEDES** con camioneta de
+fumigación (subirse duplica la velocidad y fumiga más rápido) y un **medidor de riesgo de
+epidemia** en el HUD suben la presión: si el medidor llega al 100 % la jornada termina con una
+pantalla de "epidemia declarada" y un mensaje de concientización, en vez de un "game over" duro.
+Cada criadero limpio y cada brote fumigado muestran un dato educativo y suman puntos; al terminar
+la jornada, el resumen agrega 3 datos aprendidos y una pregunta de opción múltiple, y si se
+limpió todo se puede compartir una foto antes/después.
 
 Corre 100 % en el navegador (escritorio y móvil), sin backend ni base de datos:
 el progreso se guarda en `localStorage`. Construido con [Phaser 3.90](https://phaser.io) y [Vite](https://vite.dev).
@@ -53,7 +59,10 @@ cambia la paleta, el mapa o los sonidos.
 | Acción | Escritorio | Móvil |
 |---|---|---|
 | Moverse (8 direcciones) | `WASD` o flechas | Joystick táctil: toca y arrastra en la mitad izquierda de la pantalla |
-| Eliminar agua del criadero detectado | `E` | Botón "E · Eliminar agua" del cartel de detección |
+| Eliminar agua del criadero / fumigar el brote detectado | `E` | Botón ACCIÓN del cartel de detección |
+| Correr (sprint, se agota y recarga) | `Shift` | Botón CORRER |
+| Subir/bajar de la camioneta de fumigación | `V` | Botón VEHÍCULO |
+| Pausa | `Esc` | Botón PAUSA |
 | Volver / cerrar | `Esc` (selección de nivel), `Enter` (menú → jugar) | Botones en pantalla |
 
 ## Estructura de carpetas
@@ -65,31 +74,35 @@ build-with-fable/
 ├── vite.config.js             # base: './' (funciona en subrutas como GitHub Pages)
 ├── .github/workflows/deploy.yml  # despliegue automático a GitHub Pages
 ├── docs/
-│   ├── PLAN_DESARROLLO.md     # plan del MVP por etapas
+│   ├── PLAN_DESARROLLO.md     # plan del MVP (v1) por etapas
+│   ├── PLAN_V2_JUGABILIDAD.md # plan del v2 "Agente SEDES" (jornada, brotes, móvil vertical)
+│   ├── GDD.md                 # reglas de juego de la jornada v2 (ciclo, epidemia, puntaje, estrellas)
 │   ├── PROGRESO.md            # bitácora de avance por fase
 │   ├── ARQUITECTURA.md        # escenas, eventos, contratos y formato de nivel
 │   ├── ASSET_PROMPTS.md       # guía de estilo y prompts para ilustraciones
 │   ├── capturas/              # capturas para este README
 │   └── referencias/           # plan original
 ├── tools/
-│   ├── gen-assets.mjs         # SVG → PNG de personaje, criaderos, tileset, UI, logo, miniaturas
-│   ├── gen-level.mjs          # genera y valida src/levels/equipetrol.json
+│   ├── gen-assets.mjs         # SVG → PNG de personaje, criaderos, camioneta, estación, brotes, UI
+│   ├── gen-level.mjs          # genera y valida src/levels/equipetrol.json (incluye la estación, v2)
 │   └── gen-sfx.mjs            # sintetiza los WAV (sin dependencias)
 ├── public/assets/
 │   ├── anim/                  # player.png + player.json (atlas 4 direcciones × 4 frames)
-│   ├── sprites/               # criaderos (<tipo>_agua|_vacio|_limpio, agua_<tipo>), escenario, partículas
+│   ├── sprites/               # criaderos, escenario, partículas, camioneta y brotes (v2)
 │   ├── tiles/                 # tileset.png + tileset.json (nombres de tile)
 │   ├── ui/                    # panel, botones, estrellas, barra, íconos, retratos
 │   ├── img/                   # logo, fondo del menú, miniaturas de nivel
-│   └── audio/                 # step, detect, gluglu, pop, points, win, click, music (.wav)
+│   └── audio/                 # step, detect, gluglu, pop, points, win, click, alert, spray, motor, buzz, music (.wav)
 └── src/
-    ├── main.js                # configuración de Phaser (960×540, Scale.FIT, arcade)
+    ├── main.js                # configuración de Phaser (Scale.RESIZE, mobile first, arcade)
     ├── scenes/                # Boot, Menu, LevelSelect, Game, HUD, Popup, LevelEnd, Photo
-    ├── objects/               # Player.js, Criadero.js
+    ├── objects/               # Player.js, Criadero.js, Brote.js, Estacion.js, Vehiculo.js (v2)
     ├── systems/               # EliminationFX, AudioManager, MissionManager, ScoreManager,
-    │                          # SaveSystem, LevelLoader, InteractionPrompt, Joystick
-    ├── data/                  # palette.js, facts.js (datos SEDES), levels.js (catálogo)
-    └── levels/                # equipetrol.json (generado)
+    │                          # SaveSystem, LevelLoader, InteractionPrompt, Layout, TouchControls,
+    │                          # Joystick, y v2: OutbreakManager, EpidemicMeter, FumigationFX,
+    │                          # Minimap, Compass, AlertToast
+    ├── data/                  # palette.js, facts.js, levels.js, y v2: tips.js, quiz.js
+    └── levels/                # equipetrol.json (generado, incluye la estación)
 ```
 
 Detalles de escenas, eventos y formatos en [docs/ARQUITECTURA.md](docs/ARQUITECTURA.md).

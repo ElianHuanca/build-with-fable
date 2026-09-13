@@ -36,27 +36,3 @@ const game = new Phaser.Game({
 
 // Acceso para pruebas automatizadas y depuración en consola.
 window.__game = game;
-
-/**
- * Aviso "Gira tu dispositivo": en un teléfono en vertical la escena 960×540 queda en ~390×220 px
- * y los botones bajan de 20 px, así que se muestra el overlay #rotate (index.html) hasta que el
- * usuario gire el equipo o pulse "Jugar así de todos modos". Solo en dispositivos táctiles.
- * La orientación se calcula con el tamaño de la ventana (screen.orientation no es fiable en
- * navegadores embebidos ni en emuladores); scale.orientation queda como respaldo.
- */
-function instalarAvisoRotacion() {
-  const overlay = document.getElementById('rotate');
-  const skip = document.getElementById('rotate-skip');
-  if (!overlay || !game.device.input.touch) return;
-  let omitido = false;
-  const esVertical = () => (window.innerWidth && window.innerHeight)
-    ? window.innerHeight > window.innerWidth
-    : game.scale.orientation === Phaser.Scale.PORTRAIT;
-  const actualizar = () => { overlay.hidden = omitido || !esVertical(); };
-  skip?.addEventListener('click', () => { omitido = true; actualizar(); });
-  game.scale.on(Phaser.Scale.Events.ORIENTATION_CHANGE, actualizar);
-  game.scale.on(Phaser.Scale.Events.RESIZE, actualizar);
-  window.addEventListener('resize', actualizar);
-  actualizar();
-}
-instalarAvisoRotacion();

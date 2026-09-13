@@ -27,6 +27,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.energia = 1;
     this.agotado = false;
 
+    // Multiplicador de velocidad al subirse a la camioneta (ver Vehiculo.subir/bajar).
+    this.vehiculoFactor = 1;
+
     this.cursors = scene.input.keyboard.createCursorKeys();
     this.wasd = scene.input.keyboard.addKeys('W,A,S,D');
     this.shift = scene.input.keyboard.addKey('SHIFT');
@@ -34,6 +37,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   /** Activa/desactiva la petición de sprint (se mantiene mientras el botón esté presionado). */
   setSprint(on) { this.sprint = !!on; }
+
+  /** Multiplicador de velocidad mientras está montado en la camioneta (1 = a pie). */
+  setVehiculoFactor(f) { this.vehiculoFactor = f; }
 
   /** ¿Está corriendo ahora mismo (hay petición y queda energía)? */
   get corriendo() { return this._corriendo; }
@@ -64,7 +70,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     } else {
       this.energia = Math.min(1, this.energia + dt / SPRINT_RECARGA_MS);
     }
-    const speed = SPEED * (this._corriendo ? SPRINT_FACTOR : 1);
+    const speed = SPEED * (this._corriendo ? SPRINT_FACTOR : 1) * this.vehiculoFactor;
     this.setVelocity(v.x * speed, v.y * speed);
 
     if (moviendo) {

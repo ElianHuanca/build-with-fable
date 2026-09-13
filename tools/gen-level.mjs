@@ -280,7 +280,41 @@ const criaderos = chosen.map((p, i) => ({ type: CRIADERO_TYPES[i], x: cx(p.tx), 
 const familiaIdx = chosen.findIndex((p) => p.hasGate);
 const mision_familia = { ...criaderos[familiaIdx] };
 
-const level = { name: 'Equipetrol', width: W, height: H, tile: T, ground, objects, spawn, zones, criaderos, mision_familia };
+// ---------- Estación SEDES (v2) ----------
+// Un tile libre de pasto o vereda, sin solapar objetos/patios, ni muy cerca ni muy lejos del
+// spawn: reusa 'occ'/'solidTiles'/'patios' (las mismas estructuras de las secciones previas).
+const ESTACION_MIN_DIST = 3 * T;
+const ESTACION_MAX_DIST = 14 * T;
+const isFreeGround = (tx, ty) => {
+  if (tx < 0 || ty < 0 || tx >= W || ty >= H) return false;
+  const g = ground[ty][tx];
+  if (!(g.startsWith('pasto') || g.startsWith('vereda'))) return false;
+  if (occ(tx, ty) || solidTiles.has(key(tx, ty))) return false;
+  if (patios.some((p) => p.tx === tx && p.ty === ty)) return false;
+  return true;
+};
+function buscarTileEstacion(minDist, maxDist) {
+  let best = null, bestD = Infinity;
+  for (let ty = 0; ty < H; ty++) {
+    for (let tx = 0; tx < W; tx++) {
+      if (!isFreeGround(tx, ty)) continue;
+      const d = Math.hypot(cx(tx) - spawn.x, cy(ty) - spawn.y);
+      if (d < minDist || d > maxDist) continue;
+      if (d < bestD) { best = { tx, ty }; bestD = d; }
+    }
+  }
+  return best;
+}
+// Preferido: cerca del spawn (esquina libre de la manzana de la Plaza o similar). Si no hay
+// candidato en ese rango (mapa muy chico/denso), se relaja el máximo y luego el mínimo.
+const estacionTile = buscarTileEstacion(ESTACION_MIN_DIST, ESTACION_MAX_DIST)
+  || buscarTileEstacion(ESTACION_MIN_DIST, Infinity)
+  || buscarTileEstacion(0, Infinity);
+const estacion = estacionTile
+  ? { x: cx(estacionTile.tx), y: cy(estacionTile.ty) }
+  : { x: spawn.x, y: spawn.y }; // no debería ocurrir; la validación de abajo lo marcaría igual
+
+const level = { name: 'Equipetrol', width: W, height: H, tile: T, ground, objects, spawn, zones, criaderos, mision_familia, estacion };
 
 // ---------- Validación ----------
 const errors = [];
@@ -320,6 +354,14 @@ criaderos.forEach((c, i) => {
 if (!criaderos.some((c) => c.x === mision_familia.x && c.y === mision_familia.y)) errors.push('mision_familia no apunta a un criadero');
 if (!chosen[familiaIdx]?.hasGate) errors.push('mision_familia no está en el patio de una casa con portón');
 
+const estTx = Math.floor(estacion.x / T), estTy = Math.floor(estacion.y / T);
+if (estacion.x < 0 || estacion.y < 0 || estacion.x > W * T || estacion.y > H * T) errors.push('estación fuera del mapa');
+const estGround = ground[estTy]?.[estTx];
+if (!estGround || !(estGround.startsWith('pasto') || estGround.startsWith('vereda'))) errors.push(`estación sobre '${estGround}' (debe ser pasto o vereda)`);
+if (occ(estTx, estTy) || solidTiles.has(key(estTx, estTy))) errors.push('estación solapa con un objeto existente');
+if (patios.some((p) => p.tx === estTx && p.ty === estTy)) errors.push('estación solapa con un patio reservado');
+if (Math.hypot(estacion.x - spawn.x, estacion.y - spawn.y) < 2 * T) errors.push('estación demasiado cerca del spawn');
+
 // ---------- Salida ----------
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, JSON.stringify(level));
@@ -341,6 +383,7 @@ console.log('Criaderos:', criaderos.map((c) => {
   return `${c.type}@(${c.x / T | 0},${c.y / T | 0}) ${z?.name} d=${Math.round(Math.hypot(c.x - spawn.x, c.y - spawn.y))}`;
 }).join(' | '));
 console.log('Misión familia:', mision_familia);
+console.log('Estación:', estacion, `d=${Math.round(Math.hypot(estacion.x - spawn.x, estacion.y - spawn.y))}`);
 console.log('Escrito:', OUT);
 
 if (errors.length) {

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { FACTS } from '../data/facts.js';
 import { touchSize } from '../data/ui.js';
+import { Layout } from '../systems/Layout.js';
 
 const CARD_W = 560;
 const CARD_H = 300;
@@ -22,23 +23,42 @@ export class PopupScene extends Phaser.Scene {
   }
 
   create() {
-    const W = this.scale.width, H = this.scale.height;
+    Layout.onResize(this, (w, h) => this.layout(w, h));
+
+    this.input.keyboard?.on('keydown-E', () => this.close());
+    this.input.keyboard?.on('keydown-ENTER', () => this.close());
+    this.input.keyboard?.on('keydown-SPACE', () => this.close());
+  }
+
+  /** Reconstruye la tarjeta para el tamaño actual del lienzo (RESIZE): llamado al crear y en cada resize. */
+  layout(W, H) {
+    // Si un resize llega mientras se cierra (tween en close()), no la reconstruyas: se vería "reabrir".
+    if (this.closing) return;
+    this.root?.destroy();
+    const root = this.add.container(0, 0);
+    this.root = root;
     const cx = W / 2, cy = H / 2;
 
     // Fondo oscurecido que bloquea clics
-    this.add.rectangle(cx, cy, W, H, 0x000000, 0.45).setInteractive();
+    root.add(this.add.rectangle(cx, cy, W, H, 0x000000, 0.45).setInteractive());
+
+    // Ancho relativo: min(ancho − márgenes, CARD_W). El resto de la maqueta se deriva de este valor,
+    // así el diseño se achica sin romperse en pantallas angostas (vertical) en vez de desbordar.
+    const cardW = Layout.panelWidth(this, CARD_W);
+    const cardH = Math.min(CARD_H, H - 2 * Layout.MARGIN * 2);
 
     this.card = this.add.container(cx, cy).setScale(0.8).setAlpha(0);
+    root.add(this.card);
 
     // Tarjeta
     const bg = this.add.graphics();
-    bg.fillStyle(0x000000, 0.25).fillRoundedRect(-CARD_W / 2 + 6, -CARD_H / 2 + 8, CARD_W, CARD_H, 18);
-    bg.fillStyle(hex(PALETTE.blanco), 1).fillRoundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 18);
-    bg.lineStyle(5, hex(PALETTE.marino), 1).strokeRoundedRect(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H, 18);
+    bg.fillStyle(0x000000, 0.25).fillRoundedRect(-cardW / 2 + 6, -cardH / 2 + 8, cardW, cardH, 18);
+    bg.fillStyle(hex(PALETTE.blanco), 1).fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 18);
+    bg.lineStyle(5, hex(PALETTE.marino), 1).strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 18);
     this.card.add(bg);
 
     // Cuadro con el sprite del criadero
-    const boxX = -CARD_W / 2 + 26, boxY = -CARD_H / 2 + 40, boxS = 150;
+    const boxX = -cardW / 2 + 26, boxY = -cardH / 2 + 40, boxS = 150;
     const box = this.add.graphics();
     box.fillStyle(hex(PALETTE.celeste), 0.35).fillRoundedRect(boxX, boxY, boxS, boxS, 12);
     box.lineStyle(3, hex(PALETTE.marino), 1).strokeRoundedRect(boxX, boxY, boxS, boxS, 12);
@@ -57,10 +77,10 @@ export class PopupScene extends Phaser.Scene {
       }).setOrigin(0.5));
     }
 
-    // Texto a la derecha
+    // Texto a la derecha (o abajo si el cuadro no deja sitio en pantallas muy angostas)
     const tx = boxX + boxS + 22;
-    const textW = CARD_W / 2 - 24 - tx;
-    let y = -CARD_H / 2 + 34;
+    const textW = cardW / 2 - 24 - tx;
+    let y = -cardH / 2 + 34;
     const title = this.add.text(tx, y, this.fact.nombre, {
       fontFamily: FONT, fontSize: 30, fontStyle: 'bold', color: ROJO,
     });
@@ -78,10 +98,10 @@ export class PopupScene extends Phaser.Scene {
     }));
 
     // Botón ¡Genial!
-    this.card.add(this.makeButton(0, CARD_H / 2 - 40, 220, 52, '¡Genial!', PALETTE.verde, PALETTE.verdeOscuro, () => this.close()));
+    this.card.add(this.makeButton(0, cardH / 2 - 40, 220, 52, '¡Genial!', PALETTE.verde, PALETTE.verdeOscuro, () => this.close()));
 
     // Botón X
-    const xBtn = this.add.container(CARD_W / 2 - 6, -CARD_H / 2 + 6);
+    const xBtn = this.add.container(cardW / 2 - 6, -cardH / 2 + 6);
     const xg = this.add.graphics();
     xg.fillStyle(hex(PALETTE.blanco), 1).fillCircle(0, 0, 20);
     xg.fillStyle(hex(ROJO), 1).fillCircle(0, 0, 17);
@@ -95,10 +115,6 @@ export class PopupScene extends Phaser.Scene {
     this.card.add(xBtn);
 
     this.tweens.add({ targets: this.card, scale: 1, alpha: 1, duration: 220, ease: 'Back.easeOut' });
-
-    this.input.keyboard?.on('keydown-E', () => this.close());
-    this.input.keyboard?.on('keydown-ENTER', () => this.close());
-    this.input.keyboard?.on('keydown-SPACE', () => this.close());
   }
 
   /** Texto con las palabras que contienen dígitos en negrita (token a token, con salto de línea). */

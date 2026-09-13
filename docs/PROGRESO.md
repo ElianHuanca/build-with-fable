@@ -1,6 +1,7 @@
 # Bitácora de progreso — Dengue Invaders 2D
 
 Estado del MVP por fase, según el [plan de desarrollo](PLAN_DESARROLLO.md).
+El plan de la v2 ("Agente SEDES") está en [PLAN_V2_JUGABILIDAD.md](PLAN_V2_JUGABILIDAD.md).
 Última actualización: 2026-09-13.
 
 | Fase | Nombre | Estado |
@@ -12,6 +13,187 @@ Estado del MVP por fase, según el [plan de desarrollo](PLAN_DESARROLLO.md).
 | 5 | HUD, misiones, popup, fin de nivel, guardado | Hecha |
 | 6 | Menú, selección de nivel, modo foto | Hecha |
 | 7 | Pulido, despliegue y demo | Hecha (falta activar Pages y video) |
+| v2 · Ola 1 / Agente A | Layout responsivo + menús | Hecha |
+| v2 · Ola 1 / Agentes B-H | HUD, brotes, minimapa, estación/camioneta, assets v2, contenido, controles v2 | Hecha |
+| v2 · Ola 2 | Integración en GameScene + documentación | Hecha |
+| v2 · Ola 3 | QA vertical/horizontal, video demo v2 | No iniciada |
+
+---
+
+## v2 · Ola 1 — Agente A: Layout responsivo + menús · Hecha
+
+**Qué se construyó**
+- `src/main.js`: `Scale.RESIZE` (el lienzo ocupa toda la ventana en vez del 960×540 con letterbox de v1).
+- `src/systems/Layout.js`: helper de anclas, márgenes seguros, ancho de panel y factor de escala de UI (ya existía del commit anterior; sin cambios).
+- `src/scenes/BootScene.js`, `src/scenes/MenuScene.js`, `src/scenes/LevelSelectScene.js`: reconstruyen su layout con `Layout.onResize` cada vez que cambia el tamaño de ventana u orientación, en vez de calcular posiciones una sola vez en `create()`. `MenuScene` apila CRÉDITOS/CONFIGURACIÓN en columna cuando está en vertical; `LevelSelectScene` pasa de fila a columna y escala las tarjetas para que quepan.
+- `index.html` / `main.js`: se quitó el overlay "Gira tu dispositivo" y `instalarAvisoRotacion()` — v2 es mobile-first vertical, ya no tiene sentido bloquear el juego en ese modo.
+
+**Verificado en el navegador (Playwright/preview):** Menu → LevelSelect → Game sin errores de consola en escritorio (≈629×598), vertical de celular (375×812) y horizontal de celular (812×375).
+
+**Archivos clave:** `src/main.js`, `src/systems/Layout.js`, `src/scenes/BootScene.js`, `src/scenes/MenuScene.js`, `src/scenes/LevelSelectScene.js`, `index.html`.
+
+**Fuera de alcance a propósito (de otros agentes de la Ola 1):** `GameScene`, `HUDScene`, `PopupScene`, `LevelEndScene`, `PhotoScene`, `InteractionPrompt`, `TouchControls`, `Joystick` siguen sin adaptar al nuevo tamaño de lienzo — hoy usan lo que había en v1. Todavía no existen `Brote.js`, `OutbreakManager.js`, `EpidemicMeter.js`, `FumigationFX.js`, `Minimap.js`, `Compass.js`, `AlertToast.js`, `Estacion.js`, `Vehiculo.js`, `src/data/tips.js` ni `src/data/quiz.js`.
+
+**Pendiente conocido:** en esta máquina, `npm install` deja incompleto el binding nativo de `rolldown` (bug de npm con dependencias opcionales, ver [npm/cli#4828](https://github.com/npm/cli/issues/4828)); hubo que instalar `@rolldown/binding-win32-x64-msvc` a mano. Además Node es 20.14.0 y Vite 8 pide 20.19+/22.12+ (funciona igual, solo tira un warning).
+
+---
+
+## v2 · Ola 1 — Agente B: HUD y overlays responsivos · Hecha
+
+**Qué se construyó**
+- `src/scenes/HUDScene.js`: nuevo panel "Riesgo de epidemia" (barra roja/amarilla, `registry` key `epidemia`, pulso continuo por encima de 60 %, aviso "¡El barrio está en riesgo!"), colocado bajo el panel "Barrio protegido" en vertical y al lado en horizontal si hay sitio (`posicionarEpidemia`). `mostrarDato(texto, ms)` para los tips cortos de concientización, con panel propio abajo al centro.
+- `src/scenes/PopupScene.js` y `src/scenes/PhotoScene.js`: ya usaban `Layout.onResize`/`Layout.panelWidth` de la Ola 1 previa; se mantienen sin cambios de fondo, solo se verificaron contra el nuevo tamaño de HUD.
+- `src/scenes/LevelEndScene.js`: pantalla de resumen rehecha con cinta de color según `resultado` (`'completo'|'tiempo'|'epidemia'`, con textos y colores propios por caso), sección "Aprendiste hoy" (3 datos de `facts.js` al azar) y una pregunta de `quiz.js` con bonus visual +100 (no toca `SaveSystem` ni el registry, solo el texto del resumen). Todo el contenido se arma a un ancho de referencia (560 px) y se escala para cualquier tamaño de lienzo, igual que las tarjetas de `LevelSelectScene`.
+- `src/systems/InteractionPrompt.js`: modo `sinBoton` (activo cuando `esModoTactil`): el cartel de detección muestra "Toca el botón de acción" en vez del botón "E · Eliminar agua", porque ese botón ahora vive en `TouchControls`.
+
+**Archivos clave:** `src/scenes/HUDScene.js`, `src/scenes/PopupScene.js`, `src/scenes/LevelEndScene.js`, `src/scenes/PhotoScene.js`, `src/systems/InteractionPrompt.js`.
+
+**Decisiones**
+- El medidor de epidemia se dibuja como un segundo panel independiente del de "Barrio protegido" (mismo patrón visual) en vez de fusionarlos, para que ambos se lean como barras separadas con su propio color/urgencia.
+- El bonus del quiz de `LevelEndScene` es puramente visual (solo cambia `puntosMostrados` en pantalla): no se reescribe en `registry` ni se guarda con `SaveSystem`, para no alterar el puntaje ya persistido al terminar la jornada.
+
+**Pendientes conocidos:** sin verificación manual en dispositivo real de que el panel de epidemia y el de "Barrio protegido" no se superpongan en anchos intermedios entre vertical y horizontal (solo se revisó el código, no se corrió el juego).
+
+---
+
+## v2 · Ola 1 — Agente C: Brotes y fumigación · Hecha
+
+**Qué se construyó**
+- `src/objects/Brote.js`: sprite de brote con 3 niveles (`pequeño → medio → grande`, a los 20 s y 40 s más respectivamente), textura `mosquito_<nivel>` con fallback (círculo rojo + "!" dibujado con Graphics). `fumigar(opts)` delega toda la animación en `FumigationFX.playFumigation` y devuelve una Promise; reentrada bloqueada. Emite `'crecio'` y `'fumigado'` en el propio objeto.
+- `src/systems/OutbreakManager.js`: hace aparecer un brote cada 25–40 s (al azar), 70 % de las veces cerca (80–160 px) de un criadero aún sucio y 30 % en un punto al azar del mapa; mantiene `this.activos` y notifica con `onChange(activos)` en cada aparición, crecimiento o fumigación.
+- `src/systems/EpidemicMeter.js`: sin dependencia de Phaser. `tick(deltaMs, {brotesActivos, criaderosSucios})` sube el valor (0.4/0.8/1.5 por segundo según el nivel de cada brote activo, +0.05 por criadero sucio); `registrarFumigado(nivel)` baja 8/12/18 según el nivel; `registrarLimpieza()` baja 3. Valor clampeado 0..100.
+- `src/systems/FumigationFX.js`: nube de partículas `spray` (o círculo celeste pulsante de fallback) alrededor del brote mientras este se desvanece en 2,5 s a pie o 1,5 s con `rapido: true` (camioneta); al terminar marca `brote.state = 'fumigado'` y emite el evento — nunca rechaza la Promise, incluso si algo falla a mitad de camino.
+
+**Archivos clave:** `src/objects/Brote.js`, `src/systems/OutbreakManager.js`, `src/systems/EpidemicMeter.js`, `src/systems/FumigationFX.js`.
+
+**Decisiones**
+- El mockup (`PLAN_V2_JUGABILIDAD.md` 1.3) pedía "mantener presionado el botón de acción 2,5 s" para fumigar; en cambio se implementó como un solo toque que dispara `FumigationFX` (igual que `Criadero.clean()` para los criaderos), porque es el patrón de entrada que ya existía y `Brote.fumigar()` no tiene forma de leer "mantener presionado" sin rehacer `TouchControls`/teclado. La duración de 2,5 s / 1,5 s se conserva igual, solo cambia el gesto de entrada.
+- `EpidemicMeter` es una clase plana (sin Phaser), igual que `MissionManager`/`ScoreManager`, para poder testear la lógica de subida/bajada sin una escena.
+
+**Pendientes conocidos:** sin verificar en WebGL de gama baja el rendimiento de `scene.add.particles` para la nube de espray (mismo pendiente que ya existía para `EliminationFX`).
+
+---
+
+## v2 · Ola 1 — Agente D: Minimapa y brújula · Hecha
+
+**Qué se construyó**
+- `src/systems/Minimap.js`: minimapa fijo arriba a la derecha (96 px en vertical, 140 px en horizontal, debajo del panel "Barrio protegido" del HUD), redibujado con Graphics cada frame a partir de `getEntities()` (jugador blanco, estación azul, vehículo verde, criaderos sucios amarillo, brotes rojo parpadeante). Proyección lineal de `physics.world.bounds` al cuadro del minimapa.
+- `src/systems/Compass.js`: flecha amarilla que orbita al jugador (radio 56 px) apuntando al brote activo más cercano; se oculta si no hay ninguno.
+- `src/systems/AlertToast.js`: banner ancho arriba de la pantalla para avisos de brote ("¡Brote en Manzana 5! Fumígalo antes de que crezca."), con ícono (`alert` o fallback dibujado), tween de entrada desde arriba y sfx `'alert'`. Cola de un solo mensaje: una segunda llamada mientras hay uno visible reemplaza el texto y reinicia el timer, en vez de encolar.
+
+**Archivos clave:** `src/systems/Minimap.js`, `src/systems/Compass.js`, `src/systems/AlertToast.js`.
+
+**Decisiones**
+- El minimapa redibuja con Graphics en cada `update()` en vez de usar un `RenderTexture` (como sugería el plan): con el número de entidades de un nivel (5 criaderos, unos pocos brotes) no hace falta la textura intermedia y así se evita gestionar su limpieza entre frames.
+
+**Pendientes conocidos:** ninguno detectado al leer el código; falta la verificación visual en dispositivo real (Ola 3).
+
+---
+
+## v2 · Ola 1 — Agente E: Estación y camioneta · Hecha
+
+**Qué se construyó**
+- `src/objects/Estacion.js`: edificio fijo (textura `estacion` o fallback dibujado con Graphics), cuerpo estático sin collider; `cerca(player, radio = 90)` para saber si el jugador está a distancia de interactuar.
+- `src/objects/Vehiculo.js`: camioneta que nace estacionada junto a la estación; `subir(player)`/`bajar(x, y)` la hacen seguir al jugador cada frame o quedarse estacionada; cambia de textura según la dirección del jugador (`vehiculo_<down|up|left|right>`, con fallback).
+- `tools/gen-level.mjs`: agrega el campo `estacion: {x, y}` al nivel, buscando un tile libre de pasto o vereda a 3–14 tiles del spawn (relajando la distancia máxima y luego la mínima si no encuentra candidato), sin solapar objetos ni patios reservados para criaderos; la validación del generador ahora también comprueba la estación (dentro del mapa, sobre suelo válido, sin solapes, no demasiado cerca del spawn).
+
+**Archivos clave:** `src/objects/Estacion.js`, `src/objects/Vehiculo.js`, `tools/gen-level.mjs`, `src/levels/equipetrol.json` (regenerado, ahora con `estacion`).
+
+**Decisiones**
+- La camioneta no tiene cuerpo físico propio: mientras el jugador está "montado" simplemente sigue su posición cada frame (`Vehiculo.update()`), y es `GameScene` quien aplica el factor de velocidad ×2 al jugador (`Player.setVehiculoFactor`). Evita duplicar colisiones entre jugador y camioneta.
+
+**Pendientes conocidos:** ninguno.
+
+---
+
+## v2 · Ola 1 — Agente F: Assets v2 · Hecha
+
+**Qué se construyó**
+- `tools/gen-assets.mjs`: agrega `buildVehiculo()` (camioneta blanca con tanque de fumigación, 4 direcciones, 80×56), `buildEstacion()` (edificio con garaje y cartel "SEDES", 160×128), `buildBrotes()` (nubes de 2/3/4 mosquitos con aura roja de alarma creciente, 40/56/72 px) y `buildSpray()` (círculo de espray celeste, 32×32). El personaje del sprite sheet ya incluía el chaleco naranja de agente SEDES y la mochila fumigadora desde la Fase 1, así que no hizo falta tocar `characterSVG`.
+- Todos los PNG quedaron versionados en `public/assets/sprites/` (`vehiculo_down|up|left|right.png`, `estacion.png`, `mosquito_pequeno|medio|grande.png`, `spray.png`).
+
+**Archivos clave:** `tools/gen-assets.mjs`, `public/assets/sprites/`.
+
+**Decisiones:** ninguna fuera del plan; se siguió el mismo patrón SVG → `sharp` → PNG que el resto del generador.
+
+**Pendientes conocidos:** ninguno.
+
+---
+
+## v2 · Ola 1 — Agente G: Contenido educativo y audio · Hecha
+
+**Qué se construyó**
+- `src/data/tips.js`: mensajes cortos de concientización agrupados por acción (`fumigar`, `estacion`, `brote`), mostrados con `hud.mostrarDato()` o combinados en el primer `AlertToast` de brote.
+- `src/data/quiz.js`: 8 preguntas de opción múltiple (con explicación) basadas en `facts.js`, usadas por `LevelEndScene` (una al azar por jornada).
+- `tools/gen-sfx.mjs`: 4 efectos nuevos sintetizados (`alert.wav` dos tonos ascendentes repetidos, `spray.wav` niebla filtrada con silbido, `motor.wav` arranque grave con vibrato, `buzz.wav` zumbido agudo con trémolo), mismo enfoque sin dependencias que los 7 SFX de la Fase 4.
+- `src/systems/AudioManager.js`: agrega `'alert'`, `'spray'`, `'motor'`, `'buzz'` a la lista `SFX` y sus volúmenes por key (`buzz` a 0.4, el resto al volumen por defecto).
+
+**Archivos clave:** `src/data/tips.js`, `src/data/quiz.js`, `tools/gen-sfx.mjs`, `src/systems/AudioManager.js`, `public/assets/audio/`.
+
+**Decisiones:** ninguna fuera del plan.
+
+**Pendientes conocidos:** ninguno.
+
+---
+
+## v2 · Ola 1 — Agente H: Controles táctiles v2 · Hecha
+
+**Qué se construyó**
+- `src/systems/TouchControls.js`: agrega el botón VEHÍCULO (ícono de camioneta, azul) junto a ACCIÓN/LUPA/CORRER/PAUSA; solo expone el botón y dispara `onVehiculo()` — es `GameScene` quien decide si el jugador está lo bastante cerca de la estación o de la camioneta para subir. El botón ACCIÓN (mismo que la tecla `E`) ahora también dispara `fumigarBrote()` cuando hay un brote activo y no un criadero.
+- `src/objects/Player.js`: `setVehiculoFactor(f)` (multiplicador de velocidad al subir a la camioneta, ×2) y el sprint (`setSprint`, energía 0..1) ya existentes de la Ola 1 previa, sin cambios de fondo.
+
+**Archivos clave:** `src/systems/TouchControls.js`, `src/objects/Player.js`.
+
+**Decisiones:** el botón VEHÍCULO no valida cercanía por sí mismo (a diferencia de LUPA/CORRER, que sí saben si hay un criadero activo): delega esa decisión en el callback `onVehiculo` de `GameScene.toggleVehiculo()`, para no duplicar el radio de detección en dos archivos.
+
+**Pendientes conocidos:** falta el joystick/`Joystick.js` de la Ola 1 Agente A tal cual, sin cambios para esta ola (no le hacía falta ninguno).
+
+---
+
+## v2 · Ola 2 — Agente I: Integración del ciclo en GameScene · Hecha
+
+**Qué se construyó**
+1. **Jornada de 4 min**: `JORNADA_SEG = 240`; `update()` calcula los segundos restantes y los escribe en `registry 'tiempo'`. Al llegar a 0 llama `finDeNivel('tiempo')`.
+2. **Estación y camioneta**: `this.estacion`/`this.vehiculo` nacen en `data.estacion` (con fallback a `level.spawn` si el nivel aún no trae ese campo). `toggleVehiculo()` (tecla `V` y botón `VEHÍCULO` de `TouchControls`) sube/baja según cercanía a la estación o a la propia camioneta; aplica `player.setVehiculoFactor(2|1)` y reproduce el sfx `'motor'` al subir. Tip de `TIPS.estacion` la primera vez que el jugador vuelve a la estación tras haber salido.
+3. **Brotes**: `OutbreakManager` alimentado con los criaderos y los límites del nivel, actualizado cada frame. `actualizarDeteccion()` prioriza el criadero cercano sobre un brote activo (solo busca brote si no hay criadero en rango). `intentarLimpiar()` es ahora un dispatcher entre `limpiarCriadero()` (criaderos, sin cambios de fondo) y `fumigarBrote()` (brotes, nuevo): suma 75/90/100 puntos según el nivel del brote, baja el medidor de epidemia y muestra un tip de `TIPS.fumigar`. Los avisos de brote nuevo usan `AlertToast` (`onBroteNuevo`), detectando brotes realmente nuevos con un `WeakSet` para no repetir el aviso en cada crecimiento.
+4. **Medidor de epidemia**: `epidemicMeter.tick()` cada frame con los brotes activos y los criaderos sucios; se escribe en `registry 'epidemia'`; a partir de 60 se marca `superoUmbral = true` (afecta las estrellas); al llegar a 100 se llama `finDeNivel('epidemia')`.
+5. **`finDeNivel(resultado)`**: acepta `'completo' | 'tiempo' | 'epidemia'`. Estrellas: 0 si hubo epidemia; si no, 1 por terminar, 2 si el medidor nunca superó el umbral de riesgo, 3 si además se limpiaron todos los criaderos (reemplaza el cálculo anterior por tiempo de `ScoreManager.calcularEstrellas`, que queda en el archivo sin uso).
+6. **Minimapa/brújula**: instanciados con `getEntities`/el brote activo más cercano (`broteMasCercano()`), actualizados cada frame.
+7. `outbreakManager`, `minimap`, `compass` y `alertToast` se destruyen en el `shutdown` de la escena, junto con lo que ya se limpiaba antes.
+8. El minimapa, la flecha de la brújula y el toast de alerta se agregan a la lista de overlays que `capturar()` oculta para las fotos antes/después, igual que ya se hacía con el HUD, el cartel de detección y el joystick.
+
+**Archivos clave:** `src/scenes/GameScene.js`, `src/scenes/BootScene.js` (agrega `SPRITES_V2` y las 4 keys de audio nuevas a `SFX_FILES`, sin tocar `create()`).
+
+**Decisiones que se desvían del plan original**
+- El mockup pide "mantener presionada la tecla E 2,5 s" para fumigar un brote; `fumigarBrote()` usa un solo toque (mismo patrón que `limpiarCriadero()`), porque `FumigationFX.playFumigation()` ya controla toda la duración internamente (ver Ola 1 · Agente C) y no expone un modo "mantener presionado".
+- No se implementó el "zoom de cámara por orientación" que menciona `PLAN_V2_JUGABILIDAD.md` (Ola 2 / Agente I): no estaba en los puntos concretos encargados a este agente y quedó pendiente.
+- El aviso de "primer brote de la partida" combina el tip tutorial de `TIPS.brote[0]` con el aviso normal de zona en un solo `AlertToast.mostrar()` (en vez de mostrarlos uno tras otro), porque `AlertToast` reemplaza el mensaje visible en vez de encolar dos.
+- **`MissionManager` no se tocó.** El plan (`PLAN_V2_JUGABILIDAD.md`, fila "Ola 2 / Agente I") menciona "misiones v2" como parte del entregable, pero las 4 misiones siguen siendo las de la Fase 5 (recorrer 3 zonas, encontrar 3 criaderos, ayudar a la familia, barrio 100 %): no hay ninguna misión relacionada con brotes, la estación o la camioneta. Es una brecha real entre el plan y lo implementado, no solo una omisión de este resumen.
+
+**No se pudo verificar** (no se corrió el juego, según las instrucciones de la tarea): el layout visual del minimapa/brújula/alerta en pantalla real, el comportamiento en móvil táctil, ni que `node tools/gen-level.mjs` / los scripts de assets sigan siendo válidos de punta a punta. Se verificó sintaxis con `node --check` y que `git status` solo marcara `GameScene.js` y `BootScene.js` como modificados por este agente.
+
+---
+
+## v2 · Ola 2 — Agente J: Documentación · Hecha
+
+**Qué se construyó**
+- Se actualizó esta bitácora (`docs/PROGRESO.md`), `docs/ARQUITECTURA.md` y `README.md` para reflejar el v2 tal como quedó en el código (no el plan original), y se creó `docs/GDD.md` con las reglas de juego de la jornada v2.
+
+**Archivos clave:** `docs/PROGRESO.md`, `docs/ARQUITECTURA.md`, `README.md`, `docs/GDD.md`.
+
+**Decisiones:** se documentó una sección por agente de la Ola 1 (B–H) en vez de una sola sección combinada, para que cada fila de la tabla de agentes tenga su propio detalle verificable, igual que ya existía para el Agente A.
+
+**Pendientes conocidos / inconsistencias detectadas para revisión:**
+- `MissionManager` (Fase 5) no incluye ninguna misión de brotes/estación/camioneta pese a que el plan las menciona para esta ola (ver Agente I arriba).
+- El plan (`PLAN_V2_JUGABILIDAD.md`, sección 1.5) describe un popup (modal, como `PopupScene`) para "la primera vez en la estación"; lo implementado es un tip de `TIPS.estacion` mostrado en el HUD (`hud.mostrarDato`, no modal, no pausa el juego).
+- Fumigar un brote no requiere "mantener presionado" 2,5 s como describe el plan: es un solo toque/tecla, y la duración la controla `FumigationFX` internamente (ver Agente I).
+- La Ola 3 (QA vertical Pixel 5, QA horizontal/escritorio, video demo v2) no tiene ningún artefacto nuevo: `docs/demo/` y `docs/capturas/` siguen siendo los de la Fase 7 (v1); no hay build ni enlace público actualizado para v2.
+
+---
+
+## v2 · Ola 3 — QA y video demo v2 · No iniciada
+
+Ninguno de los 3 entregables de esta ola (QA vertical en Pixel 5, QA horizontal/escritorio, video demo v2 y publicación) tiene evidencia en el repositorio: `docs/demo/dengue-invaders-demo.webm` y las capturas de `docs/capturas/` son las mismas de la Fase 7 (v1, 960×540 con letterbox), no hay capturas nuevas del layout `Scale.RESIZE` en vertical/horizontal, y no se registró ninguna corrección de QA. Queda pendiente por completo.
 
 ---
 
@@ -165,3 +347,15 @@ Estado del MVP por fase, según el [plan de desarrollo](PLAN_DESARROLLO.md).
 | Paleta | `src/data/palette.js` | Colores oficiales, `hex()` |
 | Gráficos | `tools/gen-assets.mjs` | Todos los PNG de `public/assets/` |
 | Despliegue | `.github/workflows/deploy.yml` | Build y publicación en GitHub Pages |
+| Brote de mosquitos (v2) | `src/objects/Brote.js` | Niveles pequeño/medio/grande, timers de crecimiento, `fumigar()` |
+| Aparición de brotes (v2) | `src/systems/OutbreakManager.js` | Cuándo y dónde aparece cada brote, lista `activos` |
+| Medidor de epidemia (v2) | `src/systems/EpidemicMeter.js` | Sube/baja el riesgo 0..100 según brotes y criaderos sucios |
+| Animación de fumigar (v2) | `src/systems/FumigationFX.js` | Partículas de espray, desvanecido del brote, evento `fumigado` |
+| Minimapa (v2) | `src/systems/Minimap.js` | Puntos de jugador/estación/criaderos/brotes/vehículo, proyección lineal |
+| Brújula (v2) | `src/systems/Compass.js` | Flecha alrededor del jugador hacia el brote activo más cercano |
+| Aviso de brote (v2) | `src/systems/AlertToast.js` | Banner superior con cola de un mensaje |
+| Estación SEDES (v2) | `src/objects/Estacion.js` | Edificio fijo, `cerca(player, radio)` |
+| Camioneta (v2) | `src/objects/Vehiculo.js` | Subir/bajar, sigue al jugador, velocidad ×2 |
+| Contenido educativo (v2) | `src/data/tips.js`, `src/data/quiz.js` | Tips por acción y preguntas de opción múltiple del resumen |
+| Controles táctiles (v2) | `src/systems/TouchControls.js` | Botones ACCIÓN/LUPA/CORRER/VEHÍCULO/PAUSA, `PauseMenu` |
+| Layout responsivo (v2) | `src/systems/Layout.js` | Anclas, márgenes seguros, ancho de panel, `Scale.RESIZE` |

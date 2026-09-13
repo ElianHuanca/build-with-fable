@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { esModoTactil } from '../data/ui.js';
+import { Layout } from '../systems/Layout.js';
 
 const FONT = 'Arial, sans-serif';
 const MARGEN = 12;
@@ -11,15 +12,21 @@ const STAR_R = 11;
 const DEPTH_PANEL = 10;
 const DEPTH_DATO = 20;
 const TWEEN_BARRA_MS = 450;
+const ROJO_EPIDEMIA = '#e74c3c';
+/** Umbral (0..100) a partir del cual la barra de epidemia pulsa. */
+const UMBRAL_RIESGO = 60;
 /** En modo táctil el panel "Barrio protegido" se corre a la izquierda para dejar sitio al botón PAUSA. */
 const OFFSET_PAUSA_TACTIL = 60;
+/** Separación entre el panel "Barrio protegido" y el de "Riesgo de epidemia". */
+const GAP_PANELES = 8;
 
 /**
  * Claves del registry que la HUD lee (las escribe GameScene):
  *   puntos (number) · estrellas (0..3) · limpios (number) · total (number)
  *   progreso (0..1) · zona (string) · misiones ({id,texto,hecho,progreso}[]) · tiempo (segundos)
+ *   epidemia (0..100)
  */
-export const HUD_KEYS = ['puntos', 'estrellas', 'limpios', 'total', 'progreso', 'zona', 'misiones', 'tiempo'];
+export const HUD_KEYS = ['puntos', 'estrellas', 'limpios', 'total', 'progreso', 'zona', 'misiones', 'tiempo', 'epidemia'];
 
 /**
  * Overlay de información (mockup): retrato + puntos + estrellas, misiones con
@@ -32,7 +39,7 @@ export class HUDScene extends Phaser.Scene {
 
   create() {
     this.estado = {
-      puntos: 0, estrellas: 0, limpios: 0, total: 0, progreso: 0, zona: '', misiones: [], tiempo: 0,
+      puntos: 0, estrellas: 0, limpios: 0, total: 0, progreso: 0, zona: '', misiones: [], tiempo: 0, epidemia: 0,
     };
     for (const k of HUD_KEYS) {
       const v = this.registry.get(k);
@@ -42,6 +49,8 @@ export class HUDScene extends Phaser.Scene {
     this.crearPanelJugador();
     this.crearPanelMisiones();
     this.crearPanelBarrio();
+    this.crearPanelEpidemia();
+    this.posicionarEpidemia();
     this.crearDato();
 
     this.onChange = (parent, key, value) => this.aplicar(key, value);
@@ -216,6 +225,7 @@ export class HUDScene extends Phaser.Scene {
     this.zonaText = this.texto(12, h - 21, '', 13, { bold: false, color: PALETTE.celeste }).setOrigin(0, 0);
     this.tiempoText = this.texto(PANEL_W - 12, h - 21, '00:00', 13, { color: PALETTE.blanco }).setOrigin(1, 0);
     this.barrio.add([bg, titulo, this.pctText, fondo, this.barraFill, this.zonaText, this.tiempoText]);
+    this.barrioH = h;
   }
 
   dibujarBarra(v) {
@@ -226,6 +236,65 @@ export class HUDScene extends Phaser.Scene {
     g.fillStyle(hex(PALETTE.verde), 1).fillRoundedRect(this.barraX, this.barraY, w, this.barraH, r);
     // Brillo superior
     g.fillStyle(hex(PALETTE.blanco), 0.35).fillRoundedRect(this.barraX + 2, this.barraY + 2, Math.max(0, w - 4), this.barraH * 0.35, 3);
+  }
+
+  /** Panel "Riesgo de epidemia": mismo patrón visual que crearPanelBarrio(), en rojo/amarillo. */
+  crearPanelEpidemia() {
+    const h = 74;
+    this.epidemiaW = PANEL_W;
+    this.epidemia = this.add.container(0, 0).setDepth(DEPTH_PANEL);
+    const bg = this.panel(this.add.graphics(), PANEL_W, h);
+    const titulo = this.texto(12, 8, 'Riesgo de epidemia', 15, { color: ROJO_EPIDEMIA });
+    this.epiPctText = this.texto(PANEL_W - 12, 8, '0%', 16).setOrigin(1, 0);
+
+    this.epiBarraX = 12; this.epiBarraY = 32; this.epiBarraW = PANEL_W - 24; this.epiBarraH = 14;
+    const fondo = this.add.graphics();
+    fondo.fillStyle(hex(PALETTE.linea), 0.9).fillRoundedRect(this.epiBarraX, this.epiBarraY, this.epiBarraW, this.epiBarraH, 7);
+    this.epiBarraFill = this.add.graphics();
+    this.epiValor = (this.estado.epidemia || 0) / 100; // valor animado 0..1
+    this.dibujarBarraEpidemia(this.epiValor);
+
+    this.epiAviso = this.texto(12, h - 21, '', 13, { bold: true, color: PALETTE.amarillo }).setOrigin(0, 0);
+    this.epidemia.add([bg, titulo, this.epiPctText, fondo, this.epiBarraFill, this.epiAviso]);
+    this.epidemiaH = h;
+  }
+
+  dibujarBarraEpidemia(v) {
+    const g = this.epiBarraFill.clear();
+    const w = Math.round(this.epiBarraW * Phaser.Math.Clamp(v, 0, 1));
+    if (w < 4) return;
+    const r = Math.min(7, w / 2);
+    const color = v >= 0.85 ? PALETTE.tejaOscura : v >= 0.6 ? PALETTE.teja : PALETTE.amarillo;
+    g.fillStyle(hex(color), 1).fillRoundedRect(this.epiBarraX, this.epiBarraY, w, this.epiBarraH, r);
+    g.fillStyle(hex(PALETTE.blanco), 0.35).fillRoundedRect(this.epiBarraX + 2, this.epiBarraY + 2, Math.max(0, w - 4), this.epiBarraH * 0.35, 3);
+  }
+
+  /**
+   * Ubica el panel de epidemia bajo el panel "Barrio protegido"; si el ancho alcanza
+   * (horizontal, con sitio a la izquierda del panel del barrio), lo pone al lado.
+   */
+  posicionarEpidemia() {
+    const alLado = !Layout.isPortrait(this)
+      && (this.barrio.x - MARGEN - this.epidemiaW) >= (MARGEN + PANEL_W + 24);
+    if (alLado) {
+      this.epidemia.setPosition(this.barrio.x - MARGEN - this.epidemiaW, this.barrio.y);
+    } else {
+      this.epidemia.setPosition(this.barrio.x, this.barrio.y + this.barrioH + GAP_PANELES);
+    }
+  }
+
+  /** Pulso continuo (alpha en loop) cuando el riesgo supera UMBRAL_RIESGO. */
+  manejarPulsoEpidemia(valor100) {
+    const riesgo = valor100 >= UMBRAL_RIESGO;
+    if (riesgo && !this.epiPulso) {
+      this.epiPulso = this.tweens.add({
+        targets: this.epidemia, alpha: 0.55, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+      });
+    } else if (!riesgo && this.epiPulso) {
+      this.epiPulso.stop();
+      this.epiPulso = null;
+      this.epidemia.setAlpha(1);
+    }
   }
 
   crearDato() {
@@ -259,6 +328,7 @@ export class HUDScene extends Phaser.Scene {
       case 'zona': this.zonaText.setText(value || ''); break;
       case 'tiempo': this.tiempoText.setText(HUDScene.formatoTiempo(value)); break;
       case 'misiones': this.renderMisiones(); break;
+      case 'epidemia': this.animarBarraEpidemia(value); break;
       default: break;
     }
   }
@@ -273,6 +343,34 @@ export class HUDScene extends Phaser.Scene {
     this.pctText.setText(`${Math.round(p * 100)}%`);
     this.zonaText.setText(this.estado.zona || '');
     this.tiempoText.setText(HUDScene.formatoTiempo(this.estado.tiempo));
+
+    const e = Phaser.Math.Clamp(Number(this.estado.epidemia) || 0, 0, 100);
+    this.epiValor = e / 100;
+    this.dibujarBarraEpidemia(this.epiValor);
+    this.epiPctText.setText(`${Math.round(e)}%`);
+    this.epiAviso.setText(e >= UMBRAL_RIESGO ? '¡El barrio está en riesgo!' : '');
+    this.manejarPulsoEpidemia(e);
+  }
+
+  animarBarraEpidemia(objetivo) {
+    const dest = Phaser.Math.Clamp(Number(objetivo) || 0, 0, 100);
+    this.manejarPulsoEpidemia(dest);
+    this.epiAviso.setText(dest >= UMBRAL_RIESGO ? '¡El barrio está en riesgo!' : '');
+    if (this.epiBarraTween) this.epiBarraTween.stop();
+    const from = { v: this.epiValor * 100 };
+    this.epiBarraTween = this.tweens.add({
+      targets: from, v: dest, duration: TWEEN_BARRA_MS, ease: 'Sine.easeOut',
+      onUpdate: () => {
+        this.epiValor = from.v / 100;
+        this.dibujarBarraEpidemia(this.epiValor);
+        this.epiPctText.setText(`${Math.round(from.v)}%`);
+      },
+      onComplete: () => {
+        this.epiValor = dest / 100;
+        this.dibujarBarraEpidemia(this.epiValor);
+        this.epiPctText.setText(`${Math.round(dest)}%`);
+      },
+    });
   }
 
   renderEstrellas() {
@@ -357,6 +455,7 @@ export class HUDScene extends Phaser.Scene {
 
   reposicionar(width, height) {
     this.barrio.setX(width - MARGEN - this.barrioW);
+    this.posicionarEpidemia();
     this.dato.setPosition(width / 2, height - MARGEN);
   }
 

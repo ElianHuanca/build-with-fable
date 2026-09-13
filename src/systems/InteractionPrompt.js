@@ -98,7 +98,10 @@ export class InteractionPrompt {
     lbg.lineStyle(2, hex(PALETTE.celeste), 1).strokeRoundedRect(-lw / 2, -lh / 2, lw, lh, 6);
     this.worldLabel.add([lbg, lt]);
 
-    scene.scale.on('resize', (size) => this.container.setX(size.width / 2));
+    // `scale` es del juego (compartido entre escenas): sin quitar el listener en destroy() quedaría
+    // sonando sobre un container ya destruido cada vez que se reinicia GameScene (rejugar un nivel).
+    this.onResize = (size) => this.container.setX(size.width / 2);
+    scene.scale.on('resize', this.onResize);
   }
 
   drawButton(color) {
@@ -147,6 +150,7 @@ export class InteractionPrompt {
   hideLabel() { this.worldLabel.setVisible(false); }
 
   destroy() {
+    this.scene.scale.off('resize', this.onResize);
     if (this.tween) this.tween.stop();
     this.container.destroy();
     this.worldLabel.destroy();

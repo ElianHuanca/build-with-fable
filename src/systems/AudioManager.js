@@ -11,6 +11,10 @@
  *   this.load.audio('sfx_points', BASE + 'audio/points.wav');  // puntos (+50)
  *   this.load.audio('sfx_win',    BASE + 'audio/win.wav');     // fanfarria fin de nivel
  *   this.load.audio('sfx_click',  BASE + 'audio/click.wav');   // click de UI
+ *   this.load.audio('sfx_alert',  BASE + 'audio/alert.wav');   // aviso de brote (2 tonos ascendentes)
+ *   this.load.audio('sfx_spray',  BASE + 'audio/spray.wav');   // fumigación (silbido/niebla ~1 s)
+ *   this.load.audio('sfx_motor',  BASE + 'audio/motor.wav');   // arranque de la camioneta
+ *   this.load.audio('sfx_buzz',   BASE + 'audio/buzz.wav');    // zumbido de mosquitos (~0.6 s)
  *   this.load.audio('music',      BASE + 'audio/music.wav');   // música de fondo (loop)
  *
  * API:
@@ -25,12 +29,12 @@
  */
 
 const STORAGE_KEY = 'dengue.sonido';
-const SFX = ['step', 'detect', 'gluglu', 'pop', 'points', 'win', 'click'];
+const SFX = ['step', 'detect', 'gluglu', 'pop', 'points', 'win', 'click', 'alert', 'spray', 'motor', 'buzz'];
 const MUSIC_KEY = 'music';
 const MUSIC_VOLUME = 0.6;
 const DEFAULT_VOLUME = 0.8;
 /** Volumen por key (el resto usa DEFAULT_VOLUME). */
-const VOLUMES = { step: 0.35, click: 0.6, music: MUSIC_VOLUME };
+const VOLUMES = { step: 0.35, click: 0.6, buzz: 0.4, music: MUSIC_VOLUME };
 /** Sonidos largos que no deben reiniciarse si ya están sonando. */
 const NO_OVERLAP = new Set(['gluglu', 'win']);
 const volumeFor = (name) => VOLUMES[name] ?? DEFAULT_VOLUME;

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
+import { Layout } from '../systems/Layout.js';
 
 const FONT = 'Arial, sans-serif';
 const SONIDO_KEY = 'dengue.sonido';
@@ -141,48 +142,74 @@ export class MenuScene extends Phaser.Scene {
   constructor() { super('Menu'); }
 
   create() {
-    const W = this.scale.width, H = this.scale.height;
-    this.drawBackground(W, H);
-    this.drawLogo(W, H);
-
-    // JUGAR
-    makeButton(this, {
-      x: W / 2, y: H * 0.56, w: 280, h: 64, label: 'JUGAR', fontSize: 28,
-      color: PALETTE.verde, colorHover: PALETTE.verdeOscuro, radius: 18,
-      onClick: () => this.scene.start('LevelSelect'),
-    });
-
-    // CRÉDITOS / CONFIGURACIÓN
-    const smallY = H * 0.56 + 66;
-    makeButton(this, {
-      x: W / 2 - 112, y: smallY, w: 200, h: 48, label: 'CRÉDITOS', fontSize: 16,
-      color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_book',
-      onClick: () => this.abrirCreditos(),
-    });
-    makeButton(this, {
-      x: W / 2 + 112, y: smallY, w: 200, h: 48, label: 'CONFIGURACIÓN', fontSize: 16,
-      color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_gear',
-      onClick: () => this.abrirConfiguracion(),
-    });
-
-    // Subtítulo
-    this.add.text(W / 2, H - 34, '¡Juntos contra el dengue!', {
-      fontFamily: FONT, fontSize: 24, fontStyle: 'bold', color: PALETTE.blanco,
-      stroke: PALETTE.marino, strokeThickness: 5,
-    }).setOrigin(0.5);
-
+    Layout.onResize(this, (w, h) => this.layout(w, h));
     // Atajo de teclado
     this.input.keyboard?.once('keydown-ENTER', () => { sfx(this, 'click'); this.scene.start('LevelSelect'); });
   }
 
+  /** Reconstruye todo el menú para el tamaño actual del lienzo (RESIZE): llamado al crear y en cada resize. */
+  layout(W, H) {
+    this.root?.destroy();
+    const root = this.add.container(0, 0);
+    this.root = root;
+    const portrait = Layout.isPortrait(this);
+    const ui = Layout.ui(this);
+    const safe = Layout.safe(this);
+
+    root.add(this.drawBackground(W, H));
+    root.add(this.drawLogo(W, H, portrait));
+
+    // JUGAR
+    const jugarY = portrait ? H * 0.5 : H * 0.56;
+    root.add(makeButton(this, {
+      x: W / 2, y: jugarY, w: Math.min(W - safe.left - safe.right, 280), h: 64 * ui, label: 'JUGAR', fontSize: 28 * ui,
+      color: PALETTE.verde, colorHover: PALETTE.verdeOscuro, radius: 18,
+      onClick: () => this.scene.start('LevelSelect'),
+    }));
+
+    // CRÉDITOS / CONFIGURACIÓN: en columna en vertical, lado a lado en horizontal.
+    const smallY = jugarY + 66 * ui;
+    if (portrait) {
+      const w = Math.min(W - safe.left - safe.right, 260);
+      root.add(makeButton(this, {
+        x: W / 2, y: smallY, w, h: 46, label: 'CRÉDITOS', fontSize: 16,
+        color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_book',
+        onClick: () => this.abrirCreditos(),
+      }));
+      root.add(makeButton(this, {
+        x: W / 2, y: smallY + 56, w, h: 46, label: 'CONFIGURACIÓN', fontSize: 16,
+        color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_gear',
+        onClick: () => this.abrirConfiguracion(),
+      }));
+    } else {
+      root.add(makeButton(this, {
+        x: W / 2 - 112, y: smallY, w: 200, h: 48, label: 'CRÉDITOS', fontSize: 16,
+        color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_book',
+        onClick: () => this.abrirCreditos(),
+      }));
+      root.add(makeButton(this, {
+        x: W / 2 + 112, y: smallY, w: 200, h: 48, label: 'CONFIGURACIÓN', fontSize: 16,
+        color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_gear',
+        onClick: () => this.abrirConfiguracion(),
+      }));
+    }
+
+    // Subtítulo
+    root.add(this.add.text(W / 2, H - safe.bottom - 18, '¡Juntos contra el dengue!', {
+      fontFamily: FONT, fontSize: 24 * ui, fontStyle: 'bold', color: PALETTE.blanco,
+      stroke: PALETTE.marino, strokeThickness: 5,
+    }).setOrigin(0.5));
+  }
+
   drawBackground(W, H) {
+    const objs = [];
     if (this.textures.exists('menu_bg')) {
       const bg = this.add.image(W / 2, H / 2, 'menu_bg');
       const s = Math.max(W / bg.width, H / bg.height);
       bg.setScale(s);
       // Velo suave para que resalten los botones.
-      this.add.rectangle(W / 2, H / 2, W, H, hex(PALETTE.marino), 0.18);
-      return;
+      objs.push(bg, this.add.rectangle(W / 2, H / 2, W, H, hex(PALETTE.marino), 0.18));
+      return objs;
     }
     // Degradado celeste → verde con manzanas de barrio.
     const g = this.add.graphics();
@@ -198,7 +225,8 @@ export class MenuScene extends Phaser.Scene {
     const casas = [[130, 300], [230, 300], [400, 300], [500, 300], [660, 300], [760, 300], [860, 300],
       [130, 450], [260, 450], [400, 450], [560, 450], [700, 450], [850, 450]];
     for (const [cx, cy] of casas) this.drawCasa(g, cx, cy);
-    this.add.rectangle(W / 2, H / 2, W, H, hex(PALETTE.marino), 0.12);
+    objs.push(g, this.add.rectangle(W / 2, H / 2, W, H, hex(PALETTE.marino), 0.12));
+    return objs;
   }
 
   drawCasa(g, x, y) {
@@ -208,12 +236,12 @@ export class MenuScene extends Phaser.Scene {
     g.fillStyle(hex(PALETTE.verdeOscuro), 1).fillCircle(x + 44, y + 10, 12);
   }
 
-  drawLogo(W, H) {
-    const y = H * 0.26;
+  drawLogo(W, H, portrait) {
+    const y = portrait ? H * 0.2 : H * 0.26;
     let logo;
     if (this.textures.exists('logo')) {
       logo = this.add.image(W / 2, y, 'logo');
-      logo.setScale(440 / logo.width);
+      logo.setScale((440 / logo.width) * (portrait ? 0.8 : 1));
     } else {
       logo = this.add.container(W / 2, y);
       const t1 = this.add.text(0, -18, 'DENGUE INVADERS', {
@@ -225,8 +253,10 @@ export class MenuScene extends Phaser.Scene {
         stroke: PALETTE.azulGorra, strokeThickness: 8,
       }).setOrigin(0.5);
       logo.add([t1, t2]);
+      if (portrait) logo.setScale(0.8);
     }
     this.tweens.add({ targets: logo, y: y - 8, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+    return logo;
   }
 
   abrirCreditos() {

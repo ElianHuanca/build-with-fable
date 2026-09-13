@@ -1,8 +1,13 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
+import { Layout } from '../systems/Layout.js';
+import { FACTS } from '../data/facts.js';
+import { QUIZ } from '../data/quiz.js';
 
 const FONT = 'Arial, sans-serif';
+/** Ancho de referencia de la maqueta; todo se arma a esta escala y luego se achica para caber. */
+const REF_W = 560;
 const MENSAJES = {
   3: '¡Excelente! Un barrio limpio es un barrio más sano.',
   2: '¡Muy bien! Cada criadero menos cuenta.',
@@ -10,15 +15,36 @@ const MENSAJES = {
   0: '¡Lo lograste! La próxima vez, más rápido.',
 };
 
+/** Título, colores de cinta y mensaje del bocadillo según cómo terminó la jornada. */
+const RESULTADOS = {
+  completo: { titulo: '¡Barrio protegido!', cinta: PALETTE.azulGorra, cintaOscura: PALETTE.azulGorraOscuro, mensaje: null },
+  tiempo: {
+    titulo: 'Se acabó el tiempo', cinta: PALETTE.amarillo, cintaOscura: PALETTE.teja,
+    mensaje: 'El reloj llegó a cero antes de terminar la jornada. ¡Vuelve a intentarlo, cada recorrido cuenta!',
+  },
+  epidemia: {
+    titulo: 'Se declaró una epidemia', cinta: PALETTE.teja, cintaOscura: PALETTE.tejaOscura,
+    mensaje: 'El riesgo llegó al 100 %. Faltó fumigar los brotes a tiempo y limpiar más criaderos: cada minuto cuenta.',
+  },
+};
+
 const fmtTiempo = (s) => {
   const t = Math.max(0, Math.floor(s || 0));
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 };
 
+/** 3 datos (.dato) de tipos de criadero distintos elegidos al azar, para "Aprendiste hoy". */
+function elegirHechos(n = 3) {
+  const tipos = Phaser.Utils.Array.Shuffle(Object.keys(FACTS));
+  return tipos.slice(0, n).map((t) => FACTS[t].dato);
+}
+
 /**
- * Pantalla de fin de nivel.
- * scene.launch('LevelEnd', { puntos, limpios, total, tiempo, estrellas, nivelId, nivelNombre })
- * Emite en 'Game': 'sfx' ('win', 'points'), 'nivel:continuar', 'nivel:foto'.
+ * Pantalla de fin de jornada: cinta según el resultado, estrellas, resumen, bocadillo,
+ * "Aprendiste hoy" (3 datos de facts.js) y una pregunta de quiz.js con bonus visual +100.
+ * scene.launch('LevelEnd', { puntos, limpios, total, tiempo, estrellas, nivelId, nivelNombre, resultado })
+ * `resultado`: 'completo' | 'tiempo' | 'epidemia' (default 'completo', para no romper el flujo de v1).
+ * Emite en 'Game': 'sfx' ('win', 'points', 'click'), 'nivel:continuar', 'nivel:foto'.
  */
 export class LevelEndScene extends Phaser.Scene {
   constructor() { super({ key: 'LevelEnd' }); }
@@ -32,110 +58,287 @@ export class LevelEndScene extends Phaser.Scene {
       estrellas: Phaser.Math.Clamp(data.estrellas ?? 0, 0, 3),
       nivelId: data.nivelId ?? null,
       nivelNombre: data.nivelNombre ?? '',
+      resultado: RESULTADOS[data.resultado] ? data.resultado : 'completo',
     };
     this.done = false;
+    // Bonus del quiz: solo visual/local a esta pantalla, no toca SaveSystem ni el registry.
+    this.puntosMostrados = this.data_.puntos;
+    this.hechos = elegirHechos(3);
+    this.quiz = Array.isArray(QUIZ) && QUIZ.length ? Phaser.Utils.Array.GetRandom(QUIZ) : null;
+    this.quizAnswered = false;
+    this.respuestaIndex = null;
+    this.laidOutOnce = false;
+    this.timers = [];
   }
 
   sfx(name) { this.scene.get('Game')?.events.emit('sfx', name); }
 
   create() {
-    const W = this.scale.width, H = this.scale.height;
-    const cx = W / 2;
+    Layout.onResize(this, (w, h) => this.layout(w, h));
+    this.input.keyboard?.on('keydown-ENTER', () => this.finish('nivel:continuar'));
+    this.input.keyboard?.on('keydown-SPACE', () => this.finish('nivel:continuar'));
+  }
+
+  /**
+   * Arma todo en un flujo vertical (contenido de referencia REF_W) y lo escala/centra para
+   * caber en el lienzo actual (RESIZE) — igual que las tarjetas de LevelSelectScene.
+   */
+  layout(W, H) {
+    this.timers.forEach((t) => t.remove(false));
+    this.timers = [];
+    this.root?.destroy();
+    const root = this.add.container(0, 0);
+    this.root = root;
     const d = this.data_;
+    const cfg = RESULTADOS[d.resultado];
+    const primeraVez = !this.laidOutOnce;
+    this.laidOutOnce = true;
 
-    this.add.rectangle(cx, H / 2, W, H, 0x000000, 0.55).setInteractive();
-    this.sfx('win');
+    root.add(this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.55).setInteractive());
 
-    // Cinta azul
-    const ribbonW = 460, ribbonH = 64, ry = 62;
+    const content = this.add.container(0, 0);
+    this.content = content;
+    root.add(content);
+
+    let y = 20;
+
+    // Cinta con el resultado
+    const ribbonW = 460, ribbonH = 64;
+    const ry = y + ribbonH / 2;
     const rib = this.add.graphics();
-    rib.fillStyle(hex(PALETTE.azulGorraOscuro), 1);
-    rib.fillTriangle(cx - ribbonW / 2 - 30, ry - ribbonH / 2 + 8, cx - ribbonW / 2 + 10, ry, cx - ribbonW / 2 - 30, ry + ribbonH / 2 + 8);
-    rib.fillTriangle(cx + ribbonW / 2 + 30, ry - ribbonH / 2 + 8, cx + ribbonW / 2 - 10, ry, cx + ribbonW / 2 + 30, ry + ribbonH / 2 + 8);
-    rib.fillStyle(hex(PALETTE.azulGorra), 1).fillRoundedRect(cx - ribbonW / 2, ry - ribbonH / 2, ribbonW, ribbonH, 10);
-    rib.lineStyle(4, hex(PALETTE.marino), 1).strokeRoundedRect(cx - ribbonW / 2, ry - ribbonH / 2, ribbonW, ribbonH, 10);
-    this.add.text(cx, ry, '¡Barrio protegido!', {
-      fontFamily: FONT, fontSize: 34, fontStyle: 'bold', color: PALETTE.blanco,
-      stroke: PALETTE.marino, strokeThickness: 6,
-    }).setOrigin(0.5);
+    rib.fillStyle(hex(cfg.cintaOscura), 1);
+    rib.fillTriangle(-ribbonW / 2 - 30, ry - ribbonH / 2 + 8, -ribbonW / 2 + 10, ry, -ribbonW / 2 - 30, ry + ribbonH / 2 + 8);
+    rib.fillTriangle(ribbonW / 2 + 30, ry - ribbonH / 2 + 8, ribbonW / 2 - 10, ry, ribbonW / 2 + 30, ry + ribbonH / 2 + 8);
+    rib.fillStyle(hex(cfg.cinta), 1).fillRoundedRect(-ribbonW / 2, ry - ribbonH / 2, ribbonW, ribbonH, 10);
+    rib.lineStyle(4, hex(PALETTE.marino), 1).strokeRoundedRect(-ribbonW / 2, ry - ribbonH / 2, ribbonW, ribbonH, 10);
+    content.add(rib);
+    content.add(this.add.text(0, ry, cfg.titulo, {
+      fontFamily: FONT, fontSize: 30, fontStyle: 'bold', color: PALETTE.blanco,
+      stroke: PALETTE.marino, strokeThickness: 6, align: 'center', wordWrap: { width: ribbonW - 24 },
+    }).setOrigin(0.5));
+    if (primeraVez && d.resultado === 'completo') this.sfx('win');
+    y = ry + ribbonH / 2 + 16;
     if (d.nivelNombre) {
-      this.add.text(cx, ry + ribbonH / 2 + 14, d.nivelNombre, {
+      content.add(this.add.text(0, y, d.nivelNombre, {
         fontFamily: FONT, fontSize: 15, fontStyle: 'bold', color: PALETTE.celeste,
-      }).setOrigin(0.5);
+      }).setOrigin(0.5, 0));
+      y += 26;
     }
+    y += 12;
 
-    // Estrellas
-    const starY = 150, gap = 90;
+    // Estrellas (la animación de entrada solo corre la primera vez, no en cada resize)
+    const starGap = 90;
+    const starY = y + 34;
     this.stars = [];
     for (let i = 0; i < 3; i++) {
       const on = i < d.estrellas;
-      const sx = cx - gap + i * gap;
-      const s = this.makeStar(sx, starY, on).setScale(0).setAlpha(0);
+      const sx = -starGap + i * starGap;
+      const s = this.makeStar(sx, starY, on);
+      content.add(s);
       this.stars.push(s);
-      this.time.delayedCall(350 + i * 250, () => {
-        if (on) this.sfx('points');
-        this.tweens.add({ targets: s, scale: 1, alpha: 1, duration: 320, ease: 'Back.easeOut' });
-      });
+      if (primeraVez) {
+        s.setScale(0).setAlpha(0);
+        const t = this.time.delayedCall(350 + i * 250, () => {
+          if (on) this.sfx('points');
+          this.tweens.add({ targets: s, scale: 1, alpha: 1, duration: 320, ease: 'Back.easeOut' });
+        });
+        this.timers.push(t);
+      }
     }
+    y = starY + 40;
 
-    // Barra verde
-    const barW = 380, barH = 22, by = 210;
+    // Barra de celebración
+    const barW = 380, barH = 22;
+    const by = y + barH;
     const barBg = this.add.graphics();
-    barBg.fillStyle(hex(PALETTE.marino), 1).fillRoundedRect(cx - barW / 2, by - barH / 2, barW, barH, 11);
+    barBg.fillStyle(hex(PALETTE.marino), 1).fillRoundedRect(-barW / 2, by - barH / 2, barW, barH, 11);
+    content.add(barBg);
     const barFill = this.add.graphics();
-    const pct = { v: 0 };
-    const pctText = this.add.text(cx, by, '0 %', {
+    content.add(barFill);
+    const pct = { v: primeraVez ? 0 : 1 };
+    const pctText = this.add.text(0, by, '0 %', {
       fontFamily: FONT, fontSize: 14, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5).setDepth(1);
+    content.add(pctText);
     const drawBar = () => {
       barFill.clear();
       const w = Math.max(barH, (barW - 4) * pct.v);
-      barFill.fillStyle(hex(PALETTE.verde), 1).fillRoundedRect(cx - barW / 2 + 2, by - barH / 2 + 2, w, barH - 4, 9);
+      barFill.fillStyle(hex(PALETTE.verde), 1).fillRoundedRect(-barW / 2 + 2, by - barH / 2 + 2, w, barH - 4, 9);
       pctText.setText(`${Math.round(pct.v * 100)} %`);
     };
-    drawBar();
-    this.tweens.add({ targets: pct, v: 1, duration: 800, delay: 300, ease: 'Sine.easeOut', onUpdate: drawBar });
+    if (primeraVez) {
+      this.tweens.add({ targets: pct, v: 1, duration: 800, delay: 300, ease: 'Sine.easeOut', onUpdate: drawBar });
+    } else {
+      drawBar();
+    }
+    y = by + barH / 2 + 26;
 
-    // Panel resumen (izquierda)
-    const pw = 300, ph = 150, px = cx - 200, py = 330;
+    // Panel resumen
+    const pw = 320, ph = 118;
+    const py = y + ph / 2;
     const panel = this.add.graphics();
-    panel.fillStyle(hex(PALETTE.marino), 0.95).fillRoundedRect(px - pw / 2, py - ph / 2, pw, ph, 14);
-    panel.lineStyle(3, hex(PALETTE.celeste), 1).strokeRoundedRect(px - pw / 2, py - ph / 2, pw, ph, 14);
-    const lines = [
-      `Puntos: ${d.puntos}`,
-      `Criaderos eliminados: ${d.limpios}${d.total ? ' / ' + d.total : ''}`,
-      `Tiempo: ${fmtTiempo(d.tiempo)}`,
-    ];
-    lines.forEach((l, i) => {
-      this.add.text(px - pw / 2 + 22, py - ph / 2 + 28 + i * 42, l, {
-        fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: i === 0 ? PALETTE.amarillo : PALETTE.blanco,
-      }).setOrigin(0, 0.5);
-    });
+    panel.fillStyle(hex(PALETTE.marino), 0.95).fillRoundedRect(-pw / 2, py - ph / 2, pw, ph, 14);
+    panel.lineStyle(3, hex(PALETTE.celeste), 1).strokeRoundedRect(-pw / 2, py - ph / 2, pw, ph, 14);
+    content.add(panel);
+    this.puntosLineText = this.add.text(-pw / 2 + 22, py - ph / 2 + 28, `Puntos: ${this.puntosMostrados}`, {
+      fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.amarillo,
+    }).setOrigin(0, 0.5);
+    content.add(this.puntosLineText);
+    [`Criaderos eliminados: ${d.limpios}${d.total ? ' / ' + d.total : ''}`, `Tiempo: ${fmtTiempo(d.tiempo)}`]
+      .forEach((l, i) => {
+        content.add(this.add.text(-pw / 2 + 22, py - ph / 2 + 28 + (i + 1) * 42, l, {
+          fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.blanco,
+        }).setOrigin(0, 0.5));
+      });
+    y = py + ph / 2 + 22;
 
-    // Bocadillo + retrato (derecha)
-    const bw = 250, bh = 110, bx = cx + 170, byy = 320;
+    // Bocadillo + retrato
+    const bw = 250, bh = 110;
+    const bx = -60, byy = y + bh / 2;
     const bub = this.add.graphics();
     bub.fillStyle(hex(PALETTE.blanco), 1).fillRoundedRect(bx - bw / 2, byy - bh / 2, bw, bh, 14);
     bub.fillTriangle(bx + bw / 2 - 4, byy + 10, bx + bw / 2 + 18, byy + 22, bx + bw / 2 - 4, byy + 34);
     bub.lineStyle(3, hex(PALETTE.marino), 1).strokeRoundedRect(bx - bw / 2, byy - bh / 2, bw, bh, 14);
-    this.add.text(bx, byy, MENSAJES[d.estrellas], {
+    content.add(bub);
+    content.add(this.add.text(bx, byy, cfg.mensaje || MENSAJES[d.estrellas], {
       fontFamily: FONT, fontSize: 16, fontStyle: 'bold', color: PALETTE.marino,
       wordWrap: { width: bw - 28 }, align: 'center',
-    }).setOrigin(0.5);
-
+    }).setOrigin(0.5));
     const rx = bx + bw / 2 + 62, rY = byy + 30;
     if (this.textures.exists('retrato_pulgar')) {
-      this.add.image(rx, rY, 'retrato_pulgar');
+      content.add(this.add.image(rx, rY, 'retrato_pulgar'));
     } else if (this.textures.exists('player')) {
-      this.add.image(rx, rY, 'player', 'down_0').setScale(2);
+      content.add(this.add.image(rx, rY, 'player', 'down_0').setScale(2));
     }
+    y = byy + bh / 2 + 30;
+
+    // Aprendiste hoy
+    const anchoTexto = 460;
+    content.add(this.add.text(0, y, 'Aprendiste hoy', {
+      fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.azulGorra,
+    }).setOrigin(0.5, 0));
+    y += 32;
+    this.hechos.forEach((dato) => {
+      const t = this.add.text(-anchoTexto / 2, y, `• ${dato}`, {
+        fontFamily: FONT, fontSize: 15, color: PALETTE.marino, wordWrap: { width: anchoTexto },
+      }).setOrigin(0, 0);
+      content.add(t);
+      y += t.height + 8;
+    });
+    y += 14;
+
+    if (this.quiz) y = this.crearQuiz(y, anchoTexto);
+    y += 20;
 
     // Botones
-    this.add.existing(this.makeButton(cx + 100, 470, 230, 56, 'Continuar', PALETTE.verde, PALETTE.verdeOscuro, 22, () => this.finish('nivel:continuar')));
-    this.add.existing(this.makeButton(cx - 125, 470, 190, 52, 'Modo foto', PALETTE.grisClaro, PALETTE.gris, 18, () => this.finish('nivel:foto')));
+    const btnY = y + 28;
+    content.add(this.makeButton(100, btnY, 230, 56, 'Continuar', PALETTE.verde, PALETTE.verdeOscuro, 22, () => this.finish('nivel:continuar')));
+    content.add(this.makeButton(-125, btnY, 190, 52, 'Modo foto', PALETTE.grisClaro, PALETTE.gris, 18, () => this.finish('nivel:foto')));
+    const contentH = btnY + 30;
 
-    this.input.keyboard?.on('keydown-ENTER', () => this.finish('nivel:continuar'));
-    this.input.keyboard?.on('keydown-SPACE', () => this.finish('nivel:continuar'));
+    // Escala todo para que quepa en el lienzo, en vez de reflujar cada sección por separado.
+    const safe = Layout.safe(this);
+    const availW = Math.max(240, W - safe.left - safe.right);
+    const availH = Math.max(240, H - safe.top - safe.bottom);
+    const scale = Phaser.Math.Clamp(Math.min(availW / REF_W, availH / contentH), 0.45, 1);
+    content.setScale(scale);
+    content.setPosition(W / 2, Math.max(safe.top, (H - contentH * scale) / 2));
+  }
+
+  /** Pregunta + 4 opciones; si ya se había respondido (por ejemplo tras un resize), reaplica el estado. */
+  crearQuiz(yStart, anchoTexto) {
+    let y = yStart;
+    const pregunta = this.add.text(0, y, this.quiz.pregunta, {
+      fontFamily: FONT, fontSize: 18, fontStyle: 'bold', color: PALETTE.azulGorra,
+      align: 'center', wordWrap: { width: anchoTexto },
+    }).setOrigin(0.5, 0);
+    this.content.add(pregunta);
+    y += pregunta.height + 16;
+
+    const optW = anchoTexto, optH = 44, gap = 10;
+    this.quizButtons = [];
+    this.quiz.opciones.forEach((texto, i) => {
+      const btn = this.crearOpcionQuiz(0, y + optH / 2, optW, optH, texto, () => this.responderQuiz(i));
+      this.content.add(btn);
+      this.quizButtons.push(btn);
+      y += optH + gap;
+    });
+
+    this.quizFeedback = this.add.text(0, y, this.quiz.explicacion || '', {
+      fontFamily: FONT, fontSize: 14, color: PALETTE.gris, align: 'center', wordWrap: { width: anchoTexto },
+    }).setOrigin(0.5, 0).setAlpha(0);
+    this.content.add(this.quizFeedback);
+    y += this.quizFeedback.height + 8;
+
+    if (this.respuestaIndex !== null) this.aplicarRespuestaVisual(this.respuestaIndex, false);
+    return y;
+  }
+
+  crearOpcionQuiz(x, y, w, h, texto, onClick) {
+    const c = this.add.container(x, y);
+    const g = this.add.graphics();
+    const draw = (col) => {
+      g.clear();
+      g.fillStyle(0x000000, 0.2).fillRoundedRect(-w / 2, -h / 2 + 3, w, h, 10);
+      g.fillStyle(hex(col), 1).fillRoundedRect(-w / 2, -h / 2, w, h, 10);
+      g.lineStyle(2, hex(PALETTE.marino), 0.5).strokeRoundedRect(-w / 2, -h / 2, w, h, 10);
+    };
+    draw(PALETTE.blanco);
+    const t = this.add.text(0, 0, texto, {
+      fontFamily: FONT, fontSize: 15, fontStyle: 'bold', color: PALETTE.marino,
+      align: 'center', wordWrap: { width: w - 24 },
+    }).setOrigin(0.5);
+    c.add([g, t]).setSize(...touchSize(w, h)).setInteractive({ useHandCursor: true })
+      .on('pointerover', () => { if (!this.quizAnswered) draw('#eef3f7'); })
+      .on('pointerout', () => { if (!this.quizAnswered) draw(PALETTE.blanco); })
+      .on('pointerdown', () => onClick());
+    c.redraw = draw;
+    c.label = t;
+    return c;
+  }
+
+  responderQuiz(i) {
+    if (this.quizAnswered) return;
+    this.quizAnswered = true;
+    this.respuestaIndex = i;
+    this.aplicarRespuestaVisual(i, true);
+    if (i === this.quiz.correcta) {
+      this.puntosMostrados += 100;
+      this.sfx('points');
+      this.animarBonus();
+    }
+  }
+
+  /** Resalta la opción correcta (verde) y la elegida si fue incorrecta (roja); muestra la explicación. */
+  aplicarRespuestaVisual(i, animar) {
+    const correcta = this.quiz.correcta;
+    this.quizButtons.forEach((b, idx) => {
+      b.disableInteractive();
+      if (idx === correcta) { b.redraw(PALETTE.verde); b.label.setColor(PALETTE.blanco); }
+      else if (idx === i) { b.redraw(PALETTE.teja); b.label.setColor(PALETTE.blanco); }
+    });
+    this.quizFeedback.setText(this.quiz.explicacion || '');
+    if (animar) this.tweens.add({ targets: this.quizFeedback, alpha: 1, duration: 250 });
+    else this.quizFeedback.setAlpha(1);
+  }
+
+  /** "+100" flotante junto al puntaje del resumen (solo visual, no toca SaveSystem ni el registry). */
+  animarBonus() {
+    this.puntosLineText.setText(`Puntos: ${this.puntosMostrados}`);
+    this.pulso(this.puntosLineText);
+    const bonus = this.add.text(
+      this.puntosLineText.x + this.puntosLineText.width + 10, this.puntosLineText.y, '+100',
+      { fontFamily: FONT, fontSize: 18, fontStyle: 'bold', color: PALETTE.amarillo },
+    ).setOrigin(0, 0.5).setAlpha(0);
+    this.content.add(bonus);
+    this.tweens.add({
+      targets: bonus, y: bonus.y - 26, alpha: 1, duration: 260, ease: 'Sine.easeOut',
+      onComplete: () => this.tweens.add({ targets: bonus, alpha: 0, delay: 450, duration: 300, onComplete: () => bonus.destroy() }),
+    });
+  }
+
+  pulso(target, escala = 1.15) {
+    this.tweens.add({ targets: target, scale: escala, duration: 120, yoyo: true, ease: 'Quad.easeOut' });
   }
 
   makeStar(x, y, on) {

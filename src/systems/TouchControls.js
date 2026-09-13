@@ -11,9 +11,10 @@ const ROJO = 0xe74c3c;
 
 /** Geometría de los botones (coordenadas desde los bordes derecho/inferior de la escena). */
 const BTN = {
-  accion: { dx: 100, dy: 100, r: 46 },
-  lupa:   { dx: 190, dy: 130, r: 30 },
-  correr: { dx: 100, dy: 200, r: 30 },
+  accion:   { dx: 100, dy: 100, r: 46 },
+  lupa:     { dx: 190, dy: 130, r: 30 },
+  correr:   { dx: 100, dy: 200, r: 30 },
+  vehiculo: { dx: 190, dy: 260, r: 30 },
 };
 const PAUSA = { dx: 30, y: 30, r: 22 };
 const LUPA_RECARGA_MS = 3000;
@@ -84,6 +85,19 @@ function iconoCorrer(g) {
   }
 }
 
+/** Camioneta vista de 3/4 (carrocería + ruedas), ícono del botón VEHÍCULO. */
+function iconoVehiculo(g) {
+  g.fillStyle(hex(PALETTE.blanco), 1);
+  g.fillRoundedRect(-15, -6, 30, 13, 3);
+  g.fillRoundedRect(-15, -14, 17, 9, 2);
+  g.lineStyle(2, hex(PALETTE.marino), 1);
+  g.strokeRoundedRect(-15, -6, 30, 13, 3);
+  g.strokeRoundedRect(-15, -14, 17, 9, 2);
+  g.fillStyle(hex(PALETTE.marino), 1);
+  g.fillCircle(-8, 8, 4);
+  g.fillCircle(8, 8, 4);
+}
+
 function iconoPausa(g) {
   g.fillStyle(hex(PALETTE.blanco), 1);
   g.fillRoundedRect(-8, -9, 6, 18, 2);
@@ -98,18 +112,21 @@ function iconoPausa(g) {
  *    alrededor del jugador hacia el criadero no limpio más cercano y "Criadero a N m" (2 s).
  *    Recarga 3 s.
  *  - CORRER: sprint mientras se mantiene presionado (`player.setSprint`), con anillo de energía.
+ *  - VEHÍCULO: sube/baja de la camioneta. Solo expone el botón y el callback; GameScene decide
+ *    si el jugador está cerca del vehículo o de la estación.
  *  - PAUSA (arriba-derecha): abre el `PauseMenu`.
  * Todo con Graphics/Text, `scrollFactor 0` (también en los hijos interactivos) y depth alto.
  */
 export class TouchControls {
   /**
    * @param {Phaser.Scene} scene GameScene (usa `player`, `criaderoMasCercano()`)
-   * @param {{ onAccion: () => void, onPausa: () => void }} opts
+   * @param {{ onAccion: () => void, onPausa: () => void, onVehiculo?: () => void }} opts
    */
   constructor(scene, opts) {
     this.scene = scene;
     this.onAccion = opts.onAccion;
     this.onPausa = opts.onPausa;
+    this.onVehiculo = opts.onVehiculo;
     this.estado = 'apagado';
     this.lupaHasta = 0;
     this.flechaHasta = 0;
@@ -147,6 +164,10 @@ export class TouchControls {
     scene.input.on('pointerup', soltarCorrer);
     scene.input.on('pointerupoutside', soltarCorrer);
 
+    // ---- VEHÍCULO ----
+    this.vehiculo = crearBoton(scene, W - BTN.vehiculo.dx, H - BTN.vehiculo.dy, BTN.vehiculo.r, PALETTE.azulGorra, iconoVehiculo);
+    this.vehiculo.on('pointerdown', () => this.onVehiculo?.());
+
     // ---- PAUSA ----
     this.pausa = crearBoton(scene, W - PAUSA.dx, PAUSA.y, PAUSA.r, PALETTE.marino, iconoPausa);
     this.pausa.pintar(PALETTE.marino, 0.85, PALETTE.celeste, 3);
@@ -161,7 +182,7 @@ export class TouchControls {
       stroke: PALETTE.marino, strokeThickness: 4,
     }).setOrigin(0.5).setDepth(DEPTH - 2).setVisible(false);
 
-    this.todos = [this.accion, this.lupa, this.correr, this.pausa, this.anillo, this.energiaArco];
+    this.todos = [this.accion, this.lupa, this.correr, this.vehiculo, this.pausa, this.anillo, this.energiaArco];
     this.setEstado('apagado');
 
     this.onResize = (size) => this.reposicionar(size.width, size.height);
@@ -178,6 +199,7 @@ export class TouchControls {
     this.anillo.setPosition(this.accion.x, this.accion.y);
     this.lupa.setPosition(W - BTN.lupa.dx, H - BTN.lupa.dy);
     this.correr.setPosition(W - BTN.correr.dx, H - BTN.correr.dy);
+    this.vehiculo.setPosition(W - BTN.vehiculo.dx, H - BTN.vehiculo.dy);
     this.pausa.setPosition(W - PAUSA.dx, PAUSA.y);
     this.energiaDibujada = -1;
   }

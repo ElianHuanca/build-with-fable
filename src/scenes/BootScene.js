@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { AudioManager } from '../systems/AudioManager.js';
+import { Layout } from '../systems/Layout.js';
 
 const BASE = import.meta.env.BASE_URL + 'assets/';
 
@@ -13,19 +14,31 @@ const UI_KEYS = [
 ];
 const IMG_KEYS = ['level_equipetrol', 'level_plan3000', 'logo', 'menu_bg'];
 
+// Fase v2: vehículo (4 direcciones), estación SEDES y brotes de mosquitos (3 niveles) + espray.
+const SPRITES_V2 = [
+  'vehiculo_down', 'vehiculo_up', 'vehiculo_left', 'vehiculo_right', 'estacion',
+  'mosquito_pequeno', 'mosquito_medio', 'mosquito_grande', 'spray',
+];
+
 // Audio (keys documentadas en systems/AudioManager.js). Los genera tools/gen-sfx.mjs.
-const SFX_FILES = ['step', 'detect', 'gluglu', 'pop', 'points', 'win', 'click'];
+const SFX_FILES = ['step', 'detect', 'gluglu', 'pop', 'points', 'win', 'click', 'alert', 'spray', 'motor', 'buzz'];
 
 export class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
 
   preload() {
-    const { width, height } = this.scale;
-    const box = this.add.rectangle(width / 2, height / 2, 320, 24, hex(PALETTE.marino)).setStrokeStyle(2, hex(PALETTE.celeste));
-    const bar = this.add.rectangle(width / 2 - 156, height / 2, 0, 16, hex(PALETTE.verde)).setOrigin(0, 0.5);
-    this.add.text(width / 2, height / 2 - 30, 'Cargando el barrio...', { fontFamily: 'Arial, sans-serif', fontSize: 18, color: PALETTE.blanco }).setOrigin(0.5);
-    this.load.on('progress', (v) => { bar.width = 312 * v; });
-    this.load.on('complete', () => { box.destroy(); bar.destroy(); });
+    const box = this.add.rectangle(0, 0, 320, 24, hex(PALETTE.marino)).setStrokeStyle(2, hex(PALETTE.celeste));
+    const bar = this.add.rectangle(0, 0, 0, 16, hex(PALETTE.verde)).setOrigin(0, 0.5);
+    const label = this.add.text(0, 0, 'Cargando el barrio...', { fontFamily: 'Arial, sans-serif', fontSize: 18, color: PALETTE.blanco }).setOrigin(0.5);
+    let progreso = 0;
+    const reflow = (width, height) => {
+      box.setPosition(width / 2, height / 2);
+      bar.setPosition(width / 2 - 156, height / 2).width = 312 * progreso;
+      label.setPosition(width / 2, height / 2 - 30);
+    };
+    Layout.onResize(this, reflow);
+    this.load.on('progress', (v) => { progreso = v; bar.width = 312 * v; });
+    this.load.on('complete', () => { box.destroy(); bar.destroy(); label.destroy(); });
     // Un asset ausente no debe frenar el arranque: las escenas tienen fallbacks.
     this.load.on('loaderror', (file) => console.warn('[Boot] no se pudo cargar', file?.key));
 
@@ -42,6 +55,7 @@ export class BootScene extends Phaser.Scene {
       for (const k of [`${t}_agua`, `${t}_vacio`, `${t}_limpio`, `agua_${t}`]) this.load.image(k, BASE + `sprites/${k}.png`);
     }
     for (const k of ['drop', 'spark', 'noise']) this.load.image(k, BASE + `sprites/${k}.png`);
+    for (const k of SPRITES_V2) this.load.image(k, BASE + `sprites/${k}.png`);
 
     for (const k of UI_KEYS) this.load.image(k, BASE + `ui/${k}.png`);
     for (const k of IMG_KEYS) this.load.image(k, BASE + `img/${k}.png`);

@@ -34,22 +34,32 @@ function characterSVG(dir, frame) {
     g.push(leg(24, stepL), leg(33, stepR));
   }
 
-  // Cuerpo
+  // Cuerpo: chaleco naranja de agente SEDES con franja reflectante
   const by = 30 + bob;
+  const chaleco = (x, w) =>
+    `<rect x="${x}" y="${by}" width="${w}" height="17" rx="5" fill="${P.teja}" ${O}/>` +
+    `<rect x="${x}" y="${by + 10}" width="${w}" height="3" fill="${P.amarillo}" stroke="none"/>`;
   if (dir === 'up') {
-    g.push(`<rect x="21" y="${by}" width="22" height="17" rx="5" fill="${P.blanco}" ${O}/>`);
-    // Mochila vista desde atrás
-    g.push(`<rect x="24" y="${by + 1}" width="16" height="15" rx="4" fill="${P.marino}" ${O}/>`);
-    g.push(`<rect x="27" y="${by + 4}" width="10" height="5" rx="2" fill="${P.azulGorra}" stroke="none"/>`);
+    g.push(chaleco(21, 22));
+    // Mochila fumigadora vista desde atrás: tanque con tapa y correas
+    g.push(`<rect x="26" y="${by - 1}" width="12" height="16" rx="4" fill="${P.grisClaro}" ${O}/>`);
+    g.push(`<rect x="28" y="${by - 4}" width="8" height="4" rx="2" fill="${P.gris}" ${O}/>`);
+    g.push(`<circle cx="32" cy="${by - 5}" r="1.4" fill="${P.azulGorraOscuro}" stroke="none"/>`);
+    g.push(`<rect x="23" y="${by + 2}" width="3" height="13" rx="1.5" fill="${P.marino}" stroke="none"/>`);
+    g.push(`<rect x="38" y="${by + 2}" width="3" height="13" rx="1.5" fill="${P.marino}" stroke="none"/>`);
   } else if (dir === 'left') {
-    g.push(`<rect x="24" y="${by}" width="16" height="17" rx="5" fill="${P.blanco}" ${O}/>`);
-    // Mochila lateral (sobresale atrás, a la derecha del cuerpo)
-    g.push(`<rect x="37" y="${by + 2}" width="7" height="13" rx="3" fill="${P.marino}" ${O}/>`);
+    g.push(chaleco(24, 16));
+    // Tanque de la mochila fumigadora asomando por detrás, con manguera hacia adelante
+    g.push(`<rect x="36" y="${by - 1}" width="9" height="15" rx="3.5" fill="${P.grisClaro}" ${O}/>`);
+    g.push(`<rect x="37.5" y="${by - 3.5}" width="6" height="4" rx="1.5" fill="${P.gris}" ${O}/>`);
+    g.push(`<path d="M39 ${by + 8} q7 3 9 9" fill="none" stroke="${P.grisClaro}" stroke-width="2" stroke-linecap="round"/>`);
   } else {
-    g.push(`<rect x="21" y="${by}" width="22" height="17" rx="5" fill="${P.blanco}" ${O}/>`);
-    // Tirantes de la mochila
-    g.push(`<rect x="24" y="${by + 1}" width="4" height="14" rx="2" fill="${P.marino}" stroke="none"/>`);
-    g.push(`<rect x="36" y="${by + 1}" width="4" height="14" rx="2" fill="${P.marino}" stroke="none"/>`);
+    g.push(chaleco(21, 22));
+    // Logo simple del SEDES sobre el pecho
+    g.push(`<circle cx="27" cy="${by + 5}" r="2.6" fill="${P.celeste}" ${O}/>`);
+    // Correas de la mochila fumigadora asomando sobre los hombros
+    g.push(`<rect x="24" y="${by + 1}" width="4" height="14" rx="2" fill="${P.grisClaro}" stroke="none"/>`);
+    g.push(`<rect x="36" y="${by + 1}" width="4" height="14" rx="2" fill="${P.grisClaro}" stroke="none"/>`);
   }
 
   // Brazos
@@ -59,6 +69,11 @@ function characterSVG(dir, frame) {
     g.push(arm(26, armL));
   } else {
     g.push(arm(17, armL), arm(42, armR));
+  }
+  if (dir === 'down') {
+    // Lanza de fumigación sostenida con la mano derecha
+    g.push(`<rect x="45" y="${by + 9 + armR}" width="8" height="3.4" rx="1.4" fill="${P.grisClaro}" ${O}/>`);
+    g.push(`<circle cx="53.5" cy="${by + 10.7 + armR}" r="1.6" fill="${P.gris}" stroke="none"/>`);
   }
 
   // Cabeza
@@ -335,6 +350,94 @@ async function buildDeco() {
   await sharp(Buffer.from(roofTankSVG())).png().toFile(`${OUT}/sprites/tanque_techo.png`);
 }
 
+// ---------- Camioneta de fumigación (top-down, 4 direcciones, 80×56) ----------
+function vehiculoSVG(dir) {
+  const w = 80, h = 56;
+  const body = P.blanco, tank = P.grisClaro, tankDark = P.gris;
+  const g = [];
+  const wheel = (x, y, horiz) => horiz
+    ? `<rect x="${x}" y="${y}" width="10" height="5" rx="1.5" fill="#2a2e32"/>`
+    : `<rect x="${x}" y="${y}" width="5" height="10" rx="1.5" fill="#2a2e32"/>`;
+  const badge = (cx, cy) =>
+    `<circle cx="${cx}" cy="${cy}" r="6" fill="${P.blanco}" ${O}/>` +
+    `<path d="M${cx - 3} ${cy} h6 M${cx} ${cy - 3} v6" stroke="#e53935" stroke-width="2" stroke-linecap="round"/>`;
+  g.push(`<ellipse cx="${w / 2}" cy="${h - 4}" rx="${w / 2 - 4}" ry="5" fill="rgba(0,0,0,0.22)"/>`);
+  if (dir === 'down' || dir === 'up') {
+    const frontY = dir === 'down' ? h - 12 : 12;
+    const backY = dir === 'down' ? 12 : h - 12;
+    g.push(wheel(4, 14, false), wheel(w - 9, 14, false), wheel(4, h - 24, false), wheel(w - 9, h - 24, false));
+    g.push(`<rect x="10" y="6" width="${w - 20}" height="${h - 12}" rx="8" fill="${body}" ${O}/>`);
+    // Tanque de fumigación (extremo trasero)
+    g.push(`<rect x="18" y="${backY - 10}" width="${w - 36}" height="20" rx="7" fill="${tank}" ${O}/>`);
+    g.push(`<rect x="22" y="${backY - 12}" width="${w - 44}" height="4" rx="2" fill="${tankDark}"/>`);
+    // Cabina y parabrisas (extremo delantero)
+    g.push(`<rect x="16" y="${frontY - 10}" width="${w - 32}" height="16" rx="5" fill="${P.celeste}" ${O}/>`);
+    g.push(`<rect x="20" y="${frontY - 7}" width="${w - 40}" height="6" rx="2" fill="#bfeaff" opacity="0.8"/>`);
+    g.push(`<circle cx="20" cy="${dir === 'down' ? h - 5 : 5}" r="2.4" fill="${P.amarillo}"/>`);
+    g.push(`<circle cx="${w - 20}" cy="${dir === 'down' ? h - 5 : 5}" r="2.4" fill="${P.amarillo}"/>`);
+    g.push(badge(w / 2, h / 2));
+  } else {
+    const frontX = dir === 'right' ? w - 12 : 12;
+    const backX = dir === 'right' ? 12 : w - 12;
+    g.push(wheel(14, 3, true), wheel(14, h - 8, true), wheel(w - 24, 3, true), wheel(w - 24, h - 8, true));
+    g.push(`<rect x="6" y="8" width="${w - 12}" height="${h - 16}" rx="8" fill="${body}" ${O}/>`);
+    // Tanque de fumigación (extremo trasero)
+    g.push(`<rect x="${backX - 10}" y="16" width="20" height="${h - 32}" rx="7" fill="${tank}" ${O}/>`);
+    g.push(`<rect x="${backX - 12}" y="20" width="4" height="${h - 40}" rx="2" fill="${tankDark}"/>`);
+    // Cabina y parabrisas (extremo delantero)
+    g.push(`<rect x="${frontX - 8}" y="14" width="16" height="${h - 28}" rx="5" fill="${P.celeste}" ${O}/>`);
+    g.push(`<rect x="${frontX - 5}" y="18" width="6" height="${h - 36}" rx="2" fill="#bfeaff" opacity="0.8"/>`);
+    g.push(`<circle cx="${dir === 'right' ? w - 5 : 5}" cy="18" r="2.4" fill="${P.amarillo}"/>`);
+    g.push(`<circle cx="${dir === 'right' ? w - 5 : 5}" cy="${h - 18}" r="2.4" fill="${P.amarillo}"/>`);
+    g.push(badge(w / 2, h / 2));
+  }
+  return svg(w, h, g.join(''));
+}
+
+async function buildVehiculo() {
+  for (const dir of ['down', 'up', 'left', 'right']) {
+    await sharp(Buffer.from(vehiculoSVG(dir))).png().toFile(`${OUT}/sprites/vehiculo_${dir}.png`);
+  }
+}
+
+// ---------- Estación SEDES (edificio con garaje, 160×128) ----------
+function estacionSVG() {
+  const W = 160, H = 128;
+  const g = [];
+  g.push(`<ellipse cx="${W / 2}" cy="${H - 10}" rx="${W / 2 - 6}" ry="8" fill="rgba(0,0,0,0.22)"/>`);
+  // Pared frontal
+  g.push(`<rect x="8" y="60" width="${W - 16}" height="50" rx="4" fill="${P.blanco}" ${O}/>`);
+  g.push(`<rect x="8" y="60" width="${W - 16}" height="6" fill="#e6e9ec" stroke="none"/>`);
+  // Garaje donde vive la camioneta
+  g.push(`<rect x="18" y="68" width="60" height="42" rx="3" fill="${P.azulGorraOscuro}" ${O}/>`);
+  for (let x = 22; x < 76; x += 10) g.push(`<path d="M${x} 68 v42" stroke="${P.marino}" stroke-width="1.6"/>`);
+  g.push(`<path d="M18 84 h60" stroke="${P.marino}" stroke-width="1.6"/>`);
+  // Puerta de entrada
+  g.push(`<rect x="92" y="80" width="18" height="30" rx="2" fill="#8b5a2b" ${O}/>`);
+  g.push(`<circle cx="106" cy="96" r="1.5" fill="${P.amarillo}" stroke="none"/>`);
+  // Ventana
+  g.push(`<rect x="120" y="76" width="22" height="18" rx="2" fill="${P.celeste}" ${O}/>`);
+  g.push(`<path d="M131 76 v18 M120 85 h22" stroke="${P.linea}" stroke-width="1.4"/>`);
+  // Techo a dos aguas
+  g.push(`<clipPath id="roof-estacion"><rect x="4" y="8" width="${W - 8}" height="56"/></clipPath>`);
+  g.push(`<rect x="4" y="8" width="${W - 8}" height="24" rx="3" fill="#d5602e" ${O}/>`);
+  g.push(`<rect x="4" y="30" width="${W - 8}" height="34" rx="3" fill="${P.teja}" ${O}/>`);
+  let tejas = '';
+  for (let yy = 38; yy < 60; yy += 8) tejas += `<path d="M8 ${yy} h${W - 16}" stroke="${P.tejaOscura}" stroke-width="1.6"/>`;
+  g.push(`<g clip-path="url(#roof-estacion)">${tejas}</g>`);
+  g.push(`<rect x="2" y="27" width="${W - 4}" height="6" rx="3" fill="${P.tejaOscura}" ${O}/>`);
+  // Cartel SEDES
+  g.push(`<rect x="${W / 2 - 38}" y="4" width="76" height="18" rx="4" fill="${P.marino}" ${O}/>`);
+  g.push(`<text x="${W / 2}" y="17" text-anchor="middle" font-family="Arial, Helvetica, 'DejaVu Sans', sans-serif" font-weight="bold" font-size="13" fill="${P.blanco}">SEDES</text>`);
+  // Sombra del alero
+  g.push(`<rect x="8" y="68" width="${W - 16}" height="3" fill="rgba(0,0,0,0.18)" stroke="none"/>`);
+  return svg(W, H, g.join(''));
+}
+
+async function buildEstacion() {
+  await sharp(Buffer.from(estacionSVG())).png().toFile(`${OUT}/sprites/estacion.png`);
+}
+
 // ---------- Criaderos (64×64, estados agua | vacio | limpio + capa de agua aparte) ----------
 // Cada criadero devuelve { base, water, top } como fragmentos SVG:
 //   base  = objeto sin agua; water = SOLO la capa de agua; top = partes que van encima del agua (bordes, planta).
@@ -458,6 +561,39 @@ async function buildCriaderos() {
   }
 }
 
+// ---------- Brotes de mosquitos (nubes de 2-4 siluetas, 3 tamaños) ----------
+function mosquitoSiluetaSVG(cx, cy, s, tint) {
+  return `<g transform="translate(${cx} ${cy}) scale(${s})">
+    <ellipse cx="-6" cy="-10" rx="14" ry="5" fill="${tint}" opacity="0.55" transform="rotate(-30 -6 -10)"/>
+    <ellipse cx="8" cy="-9" rx="14" ry="5" fill="${tint}" opacity="0.55" transform="rotate(28 8 -9)"/>
+    <path d="M-2 2 l-16 8 a3 3 0 0 0 2.4 5.4 l15 -4 z" fill="#2b2f33"/>
+    <ellipse cx="4" cy="0" rx="8" ry="6" fill="#3a3f44"/>
+    <circle cx="15" cy="-1" r="6.5" fill="#3a3f44"/>
+    <path d="M17 3 l12 9" stroke="#1e2226" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M-4 6 l-6 7 M2 8 l-3 8 M9 6 l6 7" stroke="#1e2226" stroke-width="1.6" stroke-linecap="round"/>
+  </g>`;
+}
+
+// nivel 'pequeno'|'medio'|'grande': más siluetas y más aura roja de alarma cuanto más grande
+function broteSVG(size, count, tint) {
+  const spots = [
+    { x: size * 0.34, y: size * 0.42, r: -10 },
+    { x: size * 0.62, y: size * 0.56, r: 12 },
+    { x: size * 0.5, y: size * 0.28, r: -4 },
+    { x: size * 0.7, y: size * 0.34, r: 8 },
+  ].slice(0, count);
+  const s = size / 95;
+  const g = [`<ellipse cx="${size / 2}" cy="${size / 2}" rx="${size * 0.46}" ry="${size * 0.46}" fill="#ff3b30" opacity="${0.08 + count * 0.05}"/>`];
+  for (const p of spots) g.push(mosquitoSiluetaSVG(p.x, p.y, s, tint));
+  return svg(size, size, g.join(''));
+}
+
+async function buildBrotes() {
+  await sharp(Buffer.from(broteSVG(40, 2, '#c0392b'))).png().toFile(`${OUT}/sprites/mosquito_pequeno.png`);
+  await sharp(Buffer.from(broteSVG(56, 3, '#b8342a'))).png().toFile(`${OUT}/sprites/mosquito_medio.png`);
+  await sharp(Buffer.from(broteSVG(72, 4, '#a5241f'))).png().toFile(`${OUT}/sprites/mosquito_grande.png`);
+}
+
 // ---------- FX y UI ----------
 function dropSVG() {
   return svg(16, 16, `
@@ -467,6 +603,14 @@ function dropSVG() {
 }
 function sparkFxSVG() {
   return svg(16, 16, sparkSVG(8, 8, 7));
+}
+function spraySVG() {
+  return svg(32, 32, `
+    <circle cx="16" cy="16" r="13" fill="${P.celeste}" opacity="0.32"/>
+    <circle cx="16" cy="16" r="9" fill="${P.celeste}" opacity="0.5" stroke="${P.blanco}" stroke-width="1" stroke-opacity="0.4"/>
+    <circle cx="12" cy="12" r="3" fill="${P.blanco}" opacity="0.55"/>
+    <circle cx="21" cy="19" r="2" fill="${P.blanco}" opacity="0.4"/>
+  `);
 }
 
 async function buildNoise() {
@@ -519,11 +663,19 @@ async function buildFX() {
   await sharp(Buffer.from(btnGreenSVG())).png().toFile(`${OUT}/ui/btn_green.png`);
 }
 
+async function buildSpray() {
+  await sharp(Buffer.from(spraySVG())).png().toFile(`${OUT}/sprites/spray.png`);
+}
+
 await buildPlayerSheet();
 await buildTileset();
 await buildDeco();
 await buildCriaderos();
 await buildFX();
+await buildVehiculo();
+await buildEstacion();
+await buildBrotes();
+await buildSpray();
 console.log('Assets generados en', OUT);
 
 // ---------- UI extra (retratos, estrellas, barras, íconos) ----------

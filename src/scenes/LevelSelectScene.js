@@ -3,6 +3,7 @@ import { PALETTE, hex } from '../data/palette.js';
 import { LEVELS } from '../data/levels.js';
 import * as Save from '../systems/SaveSystem.js';
 import { makeButton, sfx } from './MenuScene.js';
+import { Layout } from '../systems/Layout.js';
 
 const FONT = 'Arial, sans-serif';
 const CARD_W = 300;
@@ -41,38 +42,79 @@ export class LevelSelectScene extends Phaser.Scene {
   constructor() { super('LevelSelect'); }
 
   create() {
-    const W = this.scale.width, H = this.scale.height;
+    Layout.onResize(this, (w, h) => this.layout(w, h));
+    this.input.keyboard?.once('keydown-ESC', () => { sfx(this, 'click'); this.scene.start('Menu'); });
+  }
+
+  /** Reconstruye la pantalla para el tamaño actual del lienzo (RESIZE): llamado al crear y en cada resize. */
+  layout(W, H) {
+    const primeraVez = !this.root;
+    this.root?.destroy();
+    const root = this.add.container(0, 0);
+    this.root = root;
+
+    const TITLE_H = 70;
+    const FOOTER_H = 70;
 
     // Fondo degradado
     const bg = this.add.graphics();
     bg.fillGradientStyle(hex(PALETTE.celeste), hex(PALETTE.celeste), hex(PALETTE.azulGorra), hex(PALETTE.azulGorra), 1);
     bg.fillRect(0, 0, W, H);
-
-    // Franja de título
-    bg.fillStyle(hex(PALETTE.marino), 0.85).fillRect(0, 0, W, 70);
-    this.add.text(W / 2, 35, 'Selecciona un nivel', {
+    bg.fillStyle(hex(PALETTE.marino), 0.85).fillRect(0, 0, W, TITLE_H);
+    root.add(bg);
+    root.add(this.add.text(W / 2, TITLE_H / 2, 'Selecciona un nivel', {
       fontFamily: FONT, fontSize: 30, fontStyle: 'bold', color: PALETTE.blanco,
       stroke: PALETTE.linea, strokeThickness: 5,
-    }).setOrigin(0.5);
+    }).setOrigin(0.5));
 
-    // Tarjetas centradas
-    const gap = 40;
-    const totalW = LEVELS.length * CARD_W + (LEVELS.length - 1) * gap;
-    const startX = W / 2 - totalW / 2 + CARD_W / 2;
-    const cy = 70 + (H - 70) / 2;
-    LEVELS.forEach((lvl, i) => {
-      const card = this.crearTarjeta(lvl, startX + i * (CARD_W + gap), cy);
-      card.setAlpha(0).setY(cy + 30);
-      this.tweens.add({ targets: card, alpha: lvl.bloqueado ? 0.85 : 1, y: cy, duration: 300, delay: 80 * i, ease: 'Back.easeOut' });
-    });
+    const safe = Layout.safe(this);
+    const availW = W - safe.left - safe.right;
+    const availH = H - TITLE_H - FOOTER_H;
+    const portrait = Layout.isPortrait(this);
+
+    if (portrait) {
+      // Columna: apila las tarjetas y las escala para que quepan en el alto disponible.
+      const gap = 24;
+      const neededH = LEVELS.length * CARD_H + (LEVELS.length - 1) * gap;
+      const scale = Math.max(0.55, Math.min(1, availW / CARD_W, availH / neededH));
+      const cardH = CARD_H * scale, cardGap = gap * scale;
+      const totalH = LEVELS.length * cardH + (LEVELS.length - 1) * cardGap;
+      let y = TITLE_H + (availH - totalH) / 2 + cardH / 2;
+      LEVELS.forEach((lvl, i) => {
+        const card = this.crearTarjeta(lvl, W / 2, y).setScale(scale);
+        this.animarEntrada(card, y, i, primeraVez, lvl.bloqueado);
+        root.add(card);
+        y += cardH + cardGap;
+      });
+    } else {
+      // Fila: centrada, escalada si no entra a lo ancho.
+      const gap = 40;
+      const totalW = LEVELS.length * CARD_W + (LEVELS.length - 1) * gap;
+      const scale = Math.min(1, availW / totalW);
+      const cardW = CARD_W * scale, cardGap = gap * scale;
+      const scaledTotalW = LEVELS.length * cardW + (LEVELS.length - 1) * cardGap;
+      const startX = W / 2 - scaledTotalW / 2 + cardW / 2;
+      const cy = TITLE_H + availH / 2;
+      LEVELS.forEach((lvl, i) => {
+        const card = this.crearTarjeta(lvl, startX + i * (cardW + cardGap), cy).setScale(scale);
+        this.animarEntrada(card, cy, i, primeraVez, lvl.bloqueado);
+        root.add(card);
+      });
+    }
 
     // Volver
-    makeButton(this, {
+    root.add(makeButton(this, {
       x: 90, y: H - 40, w: 150, h: 50, label: '◀ Volver', fontSize: 18,
       color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro,
       onClick: () => this.scene.start('Menu'),
-    });
-    this.input.keyboard?.once('keydown-ESC', () => { sfx(this, 'click'); this.scene.start('Menu'); });
+    }));
+  }
+
+  /** Animación de entrada (solo la primera vez; en un resize las tarjetas ya deben verse quietas). */
+  animarEntrada(card, destinoY, i, primeraVez, bloqueado) {
+    if (!primeraVez) return;
+    card.setAlpha(0).setY(destinoY + 30);
+    this.tweens.add({ targets: card, alpha: bloqueado ? 0.85 : 1, y: destinoY, duration: 300, delay: 80 * i, ease: 'Back.easeOut' });
   }
 
   crearTarjeta(lvl, x, y) {

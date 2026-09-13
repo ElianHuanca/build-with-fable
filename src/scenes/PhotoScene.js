@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
+import { Layout } from '../systems/Layout.js';
 
 const FONT = 'Arial, sans-serif';
 const ROJO = '#e74c3c';
@@ -25,29 +26,58 @@ export class PhotoScene extends Phaser.Scene {
   sfx(name) { this.scene.get('Game')?.events.emit('sfx', name); }
 
   create() {
-    const W = this.scale.width, H = this.scale.height;
-    const cx = W / 2;
-    this.add.rectangle(cx, H / 2, W, H, hex(PALETTE.marino), 0.96).setInteractive();
+    Layout.onResize(this, (w, h) => this.layout(w, h));
+    this.input.keyboard?.on('keydown-ESC', () => this.close());
+  }
 
-    this.add.text(cx, 40, 'Modo foto', {
+  /** Reconstruye la pantalla (marcos + botones) para el tamaño actual del lienzo. */
+  layout(W, H) {
+    this.root?.destroy();
+    const root = this.add.container(0, 0);
+    this.root = root;
+    const cx = W / 2;
+
+    root.add(this.add.rectangle(cx, H / 2, W, H, hex(PALETTE.marino), 0.96).setInteractive());
+    root.add(this.add.text(cx, 40, 'Modo foto', {
       fontFamily: FONT, fontSize: 34, fontStyle: 'bold', color: PALETTE.blanco,
       stroke: PALETTE.linea, strokeThickness: 5,
-    }).setOrigin(0.5);
+    }).setOrigin(0.5));
 
-    const fy = 230, gap = 160;
-    this.addFrame(cx - gap, fy, this.antesKey, 'Antes', ROJO);
-    this.addFrame(cx + gap, fy, this.despuesKey, 'Después', PALETTE.verde);
+    // Los marcos se dimensionan según el espacio disponible: en vertical se apilan,
+    // en horizontal quedan lado a lado (como el diseño original a 960×540).
+    const portrait = Layout.isPortrait(this);
+    const safe = Layout.safe(this);
+    const topY = 90;
+    const bottomReserve = 170; // botón cámara + estado + botones inferiores
+    const availW = W - safe.left - safe.right;
+    const availH = Math.max(200, H - topY - bottomReserve);
+
+    let frame, fyAntes, fyDespues, gap = 0;
+    if (portrait) {
+      frame = Phaser.Math.Clamp(Math.min(availW - 32, availH / 2 - 30), 90, FRAME);
+      fyAntes = topY + frame / 2;
+      fyDespues = fyAntes + frame + 50;
+    } else {
+      frame = Phaser.Math.Clamp(Math.min((availW - 80) / 2, availH), 110, FRAME);
+      gap = frame / 2 + 40;
+      fyAntes = topY + frame / 2;
+      fyDespues = fyAntes;
+    }
+    root.add(this.addFrame(portrait ? cx : cx - gap, fyAntes, this.antesKey, 'Antes', ROJO, frame));
+    root.add(this.addFrame(portrait ? cx : cx + gap, fyDespues, this.despuesKey, 'Después', PALETTE.verde, frame));
+    const frameBottom = Math.max(fyAntes, fyDespues) + frame / 2;
 
     if (this.textures.exists('spark')) {
-      this.add.particles(cx + gap, fy, 'spark', {
-        x: { min: -FRAME / 2, max: FRAME / 2 }, y: { min: -FRAME / 2, max: FRAME / 2 },
+      root.add(this.add.particles(portrait ? cx : cx + gap, fyDespues, 'spark', {
+        x: { min: -frame / 2, max: frame / 2 }, y: { min: -frame / 2, max: frame / 2 },
         lifespan: 900, speed: { min: 5, max: 30 }, scale: { start: 0.9, end: 0 },
         alpha: { start: 1, end: 0 }, frequency: 120, blendMode: 'ADD',
-      });
+      }));
     }
 
     // Botón cámara circular blanco
-    const cam = this.add.container(cx, fy + FRAME / 2 + 20);
+    const camY = frameBottom + 46;
+    const cam = this.add.container(cx, camY);
     const cg = this.add.graphics();
     const drawCam = (col) => {
       cg.clear();
@@ -65,37 +95,41 @@ export class PhotoScene extends Phaser.Scene {
       .on('pointerover', () => drawCam(PALETTE.celeste))
       .on('pointerout', () => drawCam(PALETTE.blanco))
       .on('pointerdown', () => this.download());
+    root.add(cam);
 
     this.status = this.add.text(cx, H - 110, '', {
       fontFamily: FONT, fontSize: 15, fontStyle: 'bold', color: PALETTE.amarillo,
     }).setOrigin(0.5);
+    root.add(this.status);
 
-    this.add.existing(this.makeButton(cx - 150, H - 50, 190, 52, 'Volver', PALETTE.grisClaro, PALETTE.gris, () => this.close()));
-    this.add.existing(this.makeButton(cx + 150, H - 50, 190, 52, 'Compartir', PALETTE.azulGorra, PALETTE.azulGorraOscuro, () => this.share()));
-
-    this.input.keyboard?.on('keydown-ESC', () => this.close());
+    root.add(this.makeButton(cx - 150, H - 50, 190, 52, 'Volver', PALETTE.grisClaro, PALETTE.gris, () => this.close()));
+    root.add(this.makeButton(cx + 150, H - 50, 190, 52, 'Compartir', PALETTE.azulGorra, PALETTE.azulGorraOscuro, () => this.share()));
   }
 
-  addFrame(x, y, key, label, color) {
+  addFrame(x, y, key, label, color, frame = FRAME) {
+    const c = this.add.container(0, 0);
     const g = this.add.graphics();
-    g.fillStyle(0x000000, 0.3).fillRoundedRect(x - FRAME / 2 + 6, y - FRAME / 2 + 8, FRAME, FRAME, 12);
-    g.fillStyle(hex(PALETTE.blanco), 1).fillRoundedRect(x - FRAME / 2 - 6, y - FRAME / 2 - 6, FRAME + 12, FRAME + 12, 12);
+    g.fillStyle(0x000000, 0.3).fillRoundedRect(x - frame / 2 + 6, y - frame / 2 + 8, frame, frame, 12);
+    g.fillStyle(hex(PALETTE.blanco), 1).fillRoundedRect(x - frame / 2 - 6, y - frame / 2 - 6, frame + 12, frame + 12, 12);
+    c.add(g);
     if (this.textures.exists(key)) {
-      this.add.image(x, y, key).setDisplaySize(FRAME, FRAME);
+      c.add(this.add.image(x, y, key).setDisplaySize(frame, frame));
     } else {
-      g.fillStyle(hex(PALETTE.gris), 1).fillRect(x - FRAME / 2, y - FRAME / 2, FRAME, FRAME);
-      this.add.text(x, y, 'Sin captura', {
+      g.fillStyle(hex(PALETTE.gris), 1).fillRect(x - frame / 2, y - frame / 2, frame, frame);
+      c.add(this.add.text(x, y, 'Sin captura', {
         fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.grisClaro,
-      }).setOrigin(0.5);
+      }).setOrigin(0.5));
     }
-    const tag = this.add.text(x, y - FRAME / 2 - 2, label, {
+    const tag = this.add.text(x, y - frame / 2 - 2, label, {
       fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5);
     const tw = tag.width + 28, th = tag.height + 8;
     const tg = this.add.graphics();
-    tg.fillStyle(hex(color), 1).fillRoundedRect(x - tw / 2, y - FRAME / 2 - 2 - th / 2, tw, th, 9);
-    tg.lineStyle(2, hex(PALETTE.blanco), 1).strokeRoundedRect(x - tw / 2, y - FRAME / 2 - 2 - th / 2, tw, th, 9);
+    tg.fillStyle(hex(color), 1).fillRoundedRect(x - tw / 2, y - frame / 2 - 2 - th / 2, tw, th, 9);
+    tg.lineStyle(2, hex(PALETTE.blanco), 1).strokeRoundedRect(x - tw / 2, y - frame / 2 - 2 - th / 2, tw, th, 9);
+    c.add([tg, tag]);
     tag.setDepth(1);
+    return c;
   }
 
   makeButton(x, y, w, h, label, color, hover, cb) {

@@ -180,6 +180,47 @@ function click() {
   return b;
 }
 
+function alert() {
+  const b = buffer(0.5);
+  const env = (t, d) => adsr(t, d, 0.004, 0.02, 0.8, 0.03);
+  // Dos tonos ascendentes cortos, repetidos una vez para llamar la atención (aviso de brote).
+  voice(b, 0, 0.09, () => noteHz(83), osc.square, env);    // B5
+  voice(b, 0.1, 0.09, () => noteHz(88), osc.square, env);  // E6
+  voice(b, 0.25, 0.09, () => noteHz(83), osc.square, env);
+  voice(b, 0.35, 0.09, () => noteHz(88), osc.square, env);
+  lowpass(b, 5000);
+  return b;
+}
+
+function spray() {
+  const b = buffer(1);
+  // Niebla de espray: ruido filtrado con un silbido tenue moviéndose por encima.
+  voice(b, 0, 1, () => 1, () => noise(), (t, d) => adsr(t, d, 0.05, 0.15, 0.6, 0.3), 0.8);
+  voice(b, 0, 1, (t) => 1800 + 400 * Math.sin(TAU * 2 * t), osc.sine, (t, d) => adsr(t, d, 0.08, 0.2, 0.3, 0.3), 0.15);
+  lowpass(b, 3500); highpass(b, 500);
+  return b;
+}
+
+function motor() {
+  const b = buffer(0.6);
+  const env = (t, d) => adsr(t, d, 0.01, 0.05, 0.7, 0.15);
+  // Arranque tipo "brrm": pulso grave que sube de tono con vibrato, más ruido de combustión.
+  voice(b, 0, 0.6, (t) => 70 + 40 * Math.min(1, t / 0.15) + 8 * Math.sin(TAU * 18 * t), osc.square, env, 0.8);
+  voice(b, 0, 0.6, () => 1, () => noise(), (t, d) => adsr(t, d, 0.01, 0.1, 0.3, 0.2), 0.25);
+  lowpass(b, 900);
+  return b;
+}
+
+function buzz() {
+  const b = buffer(0.6);
+  const env = (t, d) => adsr(t, d, 0.02, 0.05, 0.8, 0.1);
+  // Zumbido agudo tipo mosquito: tono con vibrato y trémolo de amplitud.
+  voice(b, 0, 0.6, (t) => 620 + 30 * Math.sin(TAU * 14 * t), osc.square,
+    (t, d) => env(t, d) * (0.7 + 0.3 * Math.sin(TAU * 40 * t)), 0.5);
+  highpass(b, 300); lowpass(b, 3000);
+  return b;
+}
+
 // ---------- música ----------
 function music() {
   const BPM = 110, BEAT = 60 / BPM, BARS = 8;  // 8 compases de 4/4 ≈ 17.45 s
@@ -236,5 +277,9 @@ writeWav('pop.wav', finalize(pop(), SFX_DB));
 writeWav('points.wav', finalize(points(), SFX_DB));
 writeWav('win.wav', finalize(win(), SFX_DB));
 writeWav('click.wav', finalize(click(), SFX_DB));
+writeWav('alert.wav', finalize(alert(), SFX_DB));
+writeWav('spray.wav', finalize(spray(), SFX_DB));
+writeWav('motor.wav', finalize(motor(), SFX_DB));
+writeWav('buzz.wav', finalize(buzz(), SFX_DB));
 writeWav('music.wav', finalize(music(), MUSIC_DB, 8)); // fundido de 8 ms en los bordes → loop sin clic
 console.log('Listo.');
