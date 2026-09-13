@@ -1,0 +1,15 @@
+{
+  "tile": 64,
+  "cols": 4,
+  "names": [
+    "pasto",
+    "pasto_oscuro",
+    "pasto_seco",
+    "calle",
+    "calle_linea",
+    "calle_linea_v",
+    "cruce",
+    "vereda",
+    "tierra"
+  ]
+}

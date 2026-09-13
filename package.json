@@ -1,0 +1,34 @@
+{
+  "name": "dengue-invaders-2d",
+  "version": "1.0.0",
+  "description": "",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "gen:assets": "node tools/gen-assets.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ElianHuanca/build-with-fable.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ElianHuanca/build-with-fable/issues"
+  },
+  "homepage": "https://github.com/ElianHuanca/build-with-fable#readme",
+  "dependencies": {
+    "phaser": "^3.90.0"
+  },
+  "devDependencies": {
+    "sharp": "^0.35.4",
+    "vite": "^8.3.0"
+  },
+  "private": true,
+  "type": "module"
+}
