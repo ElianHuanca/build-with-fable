@@ -10,7 +10,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "gen:assets": "node tools/gen-assets.mjs",
-    "gen:level": "node tools/gen-level.mjs"
+    "gen:level": "node tools/gen-level.mjs",
+    "gen:sfx": "node tools/gen-sfx.mjs"
   },
   "repository": {
     "type": "git",

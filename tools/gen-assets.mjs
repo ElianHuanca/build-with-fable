@@ -525,3 +525,317 @@ await buildDeco();
 await buildCriaderos();
 await buildFX();
 console.log('Assets generados en', OUT);
+
+// ---------- UI extra (retratos, estrellas, barras, íconos) ----------
+const O2 = (w) => `stroke="${P.linea}" stroke-width="${w}" stroke-linejoin="round" stroke-linecap="round"`;
+
+// Cabeza del personaje a escala: r = radio de la cabeza; centro (cx, cy). Sonrisa amplia opcional.
+function bigHeadSVG(cx, cy, r, { wide = false } = {}) {
+  const sw = (1.6 * r) / 12.5;
+  const o = O2(sw.toFixed(2));
+  const k = r / 12.5;
+  const g = [];
+  g.push(`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${P.piel}" ${o}/>`);
+  g.push(`<path d="M${cx - r * 0.96} ${cy} a${r * 0.96} ${r * 0.96} 0 0 1 ${r * 1.92} 0 v${2 * k} h-${r * 1.92} z" fill="${P.linea}" stroke="none"/>`);
+  g.push(`<path d="M${cx - r} ${cy + 1 * k} a${r} ${r} 0 0 1 ${2 * r} 0 z" fill="${P.azulGorra}" ${o}/>`);
+  g.push(`<rect x="${cx - r - 0.5 * k}" y="${cy - 1 * k}" width="${2 * r + 1 * k}" height="${3.5 * k}" rx="${1.5 * k}" fill="${P.azulGorraOscuro}" stroke="none"/>`);
+  g.push(`<ellipse cx="${cx}" cy="${cy + 3 * k}" rx="${r * 1.08}" ry="${2.2 * k}" fill="${P.azulGorraOscuro}" ${o}/>`);
+  // brillo de la gorra
+  g.push(`<path d="M${cx - r * 0.7} ${cy - r * 0.3} a${r * 0.75} ${r * 0.75} 0 0 1 ${r * 0.55} -${r * 0.55}" fill="none" stroke="#5a8fe8" stroke-width="${2 * k}" stroke-linecap="round" opacity="0.8"/>`);
+  // ojos
+  g.push(`<circle cx="${cx - 4.5 * k}" cy="${cy + 7.6 * k}" r="${1.9 * k}" fill="${P.linea}"/>`);
+  g.push(`<circle cx="${cx + 4.5 * k}" cy="${cy + 7.6 * k}" r="${1.9 * k}" fill="${P.linea}"/>`);
+  g.push(`<circle cx="${cx - 3.8 * k}" cy="${cy + 6.9 * k}" r="${0.6 * k}" fill="${P.blanco}"/>`);
+  g.push(`<circle cx="${cx + 5.2 * k}" cy="${cy + 6.9 * k}" r="${0.6 * k}" fill="${P.blanco}"/>`);
+  // sonrisa
+  if (wide) {
+    g.push(`<path d="M${cx - 4.5 * k} ${cy + 10.2 * k} q${4.5 * k} ${4.6 * k} ${9 * k} 0 z" fill="${P.linea}" stroke="none"/>`);
+    g.push(`<path d="M${cx - 2.5 * k} ${cy + 10.9 * k} q${2.5 * k} ${1.6 * k} ${5 * k} 0 z" fill="${P.blanco}" stroke="none"/>`);
+  } else {
+    g.push(`<path d="M${cx - 3.5 * k} ${cy + 10.4 * k} q${3.5 * k} ${3 * k} ${7 * k} 0" fill="none" stroke="${P.linea}" stroke-width="${1.6 * k}" stroke-linecap="round"/>`);
+  }
+  g.push(`<circle cx="${cx - 7 * k}" cy="${cy + 9.6 * k}" r="${1.6 * k}" fill="${P.teja}" opacity="0.22"/>`);
+  g.push(`<circle cx="${cx + 7 * k}" cy="${cy + 9.6 * k}" r="${1.6 * k}" fill="${P.teja}" opacity="0.22"/>`);
+  return g.join('');
+}
+
+function retratoSVG() {
+  const S = 128, c = 64, r = 38, k = r / 12.5, o = O2((1.6 * k).toFixed(2));
+  const cy = 58;
+  const body = `
+    <clipPath id="circ"><circle cx="${c}" cy="${c}" r="57"/></clipPath>
+    <circle cx="${c}" cy="${c}" r="60" fill="${P.blanco}" stroke="${P.linea}" stroke-width="2.4"/>
+    <circle cx="${c}" cy="${c}" r="55" fill="${P.celeste}"/>
+    <g clip-path="url(#circ)">
+      <!-- torso -->
+      <rect x="${c - 36}" y="${cy + r - 4}" width="72" height="60" rx="16" fill="${P.blanco}" ${o}/>
+      <rect x="${c - 28}" y="${cy + r - 2}" width="12" height="50" rx="6" fill="${P.marino}" stroke="none"/>
+      <rect x="${c + 16}" y="${cy + r - 2}" width="12" height="50" rx="6" fill="${P.marino}" stroke="none"/>
+      ${bigHeadSVG(c, cy, r)}
+    </g>
+    <circle cx="${c}" cy="${c}" r="57" fill="none" stroke="${P.blanco}" stroke-width="6"/>
+    <circle cx="${c}" cy="${c}" r="60.5" fill="none" stroke="${P.linea}" stroke-width="2.4"/>
+  `;
+  return svg(S, S, body);
+}
+
+function retratoPulgarSVG() {
+  const S = 160, c = 80, r = 34, k = r / 12.5, o = O2((1.6 * k).toFixed(2));
+  const cy = 50;
+  const by = cy + r + 2; // top del torso
+  const body = `
+    <ellipse cx="${c}" cy="152" rx="36" ry="6" fill="rgba(0,0,0,0.22)"/>
+    <!-- piernas -->
+    <rect x="${c - 22}" y="${by + 38}" width="18" height="26" rx="6" fill="${P.marino}" ${o}/>
+    <rect x="${c + 4}" y="${by + 38}" width="18" height="26" rx="6" fill="${P.marino}" ${o}/>
+    <rect x="${c - 25}" y="${by + 58}" width="24" height="12" rx="6" fill="${P.azulGorra}" ${o}/>
+    <rect x="${c + 1}" y="${by + 58}" width="24" height="12" rx="6" fill="${P.azulGorra}" ${o}/>
+    <!-- brazo izquierdo abajo -->
+    <rect x="${c - 42}" y="${by + 6}" width="13" height="32" rx="6.5" fill="${P.piel}" ${o}/>
+    <!-- torso -->
+    <rect x="${c - 30}" y="${by}" width="60" height="44" rx="12" fill="${P.blanco}" ${o}/>
+    <rect x="${c - 23}" y="${by + 2}" width="10" height="38" rx="5" fill="${P.marino}" stroke="none"/>
+    <rect x="${c + 13}" y="${by + 2}" width="10" height="38" rx="5" fill="${P.marino}" stroke="none"/>
+    <!-- brazo derecho levantado con pulgar arriba -->
+    <path d="M${c + 30} ${by + 14} q14 -2 20 -18 l0 -22" fill="none" stroke="${P.linea}" stroke-width="${13 + 2 * 1.6 * k}" stroke-linecap="round"/>
+    <path d="M${c + 30} ${by + 14} q14 -2 20 -18 l0 -22" fill="none" stroke="${P.piel}" stroke-width="13" stroke-linecap="round"/>
+    <!-- puño -->
+    <rect x="${c + 40}" y="${cy - 10}" width="24" height="22" rx="8" fill="${P.piel}" ${o}/>
+    <path d="M${c + 43} ${cy - 3} h18 M${c + 43} ${cy + 3} h18" stroke="${P.pieloscura}" stroke-width="2" stroke-linecap="round"/>
+    <!-- pulgar -->
+    <path d="M${c + 46} ${cy - 9} v-14 a6 6 0 0 1 12 0 v14 z" fill="${P.piel}" ${o}/>
+    ${bigHeadSVG(c, cy, r, { wide: true })}
+  `;
+  return svg(S, S, body);
+}
+
+const starPath = (cx, cy, R, r) => {
+  const pts = [];
+  for (let i = 0; i < 10; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI) / 5;
+    const rr = i % 2 ? r : R;
+    pts.push(`${(cx + rr * Math.cos(a)).toFixed(2)} ${(cy + rr * Math.sin(a)).toFixed(2)}`);
+  }
+  return `M${pts.join(' L')} Z`;
+};
+function starSVG(on) {
+  const fill = on ? P.amarillo : P.grisClaro;
+  const stroke = on ? '#d99a1a' : '#5f656b';
+  const shineEl = on
+    ? `<path d="${starPath(24, 25, 12, 5)}" fill="#ffe27a" opacity="0.7"/><ellipse cx="18" cy="17" rx="4" ry="2.4" fill="${P.blanco}" opacity="0.75" transform="rotate(-30 18 17)"/>`
+    : `<path d="${starPath(24, 25, 12, 5)}" fill="#9aa0a6" opacity="0.5"/>`;
+  return svg(48, 48, `
+    <path d="${starPath(24, 26, 21, 9)}" fill="${fill}" stroke="${stroke}" stroke-width="3" stroke-linejoin="round"/>
+    ${shineEl}
+  `);
+}
+
+function barBgSVG() {
+  return svg(24, 24, `<rect x="1.5" y="1.5" width="21" height="21" rx="10" fill="#1b2733" stroke="${P.marino}" stroke-width="3"/>`);
+}
+function barFillSVG() {
+  return svg(24, 24, `
+    <rect x="0" y="0" width="24" height="24" rx="8" fill="${P.verde}"/>
+    <clipPath id="bf"><rect x="0" y="0" width="24" height="24" rx="8"/></clipPath>
+    <rect x="0" y="0" width="24" height="9" fill="#8fdc6b" clip-path="url(#bf)"/>
+  `);
+}
+
+const W = `fill="none" stroke="${P.blanco}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"`;
+const ICONS = {
+  camera: `<path d="M14 11 l3 -4 h6 l3 4 h6 a3 3 0 0 1 3 3 v14 a3 3 0 0 1 -3 3 h-24 a3 3 0 0 1 -3 -3 v-14 a3 3 0 0 1 3 -3 z" ${W}/><circle cx="20" cy="22" r="5.5" ${W}/><circle cx="20" cy="22" r="2" fill="${P.blanco}"/>`,
+  share: `<circle cx="29" cy="9" r="4" ${W}/><circle cx="11" cy="20" r="4" ${W}/><circle cx="29" cy="31" r="4" ${W}/><path d="M14.5 18 l11 -7 M14.5 22 l11 7" ${W}/>`,
+  lock: `<rect x="9" y="18" width="22" height="16" rx="3" fill="${P.blanco}" stroke="${P.blanco}" stroke-width="3" stroke-linejoin="round"/><path d="M13 18 v-5 a7 7 0 0 1 14 0 v5" ${W}/><circle cx="20" cy="25" r="2.2" fill="${P.marino}"/><rect x="18.8" y="25" width="2.4" height="5" fill="${P.marino}"/>`,
+  book: `<path d="M20 12 c-3 -3 -8 -3 -12 -2 v20 c4 -1 9 -1 12 2 c3 -3 8 -3 12 -2 v-20 c-4 -1 -9 -1 -12 2 z" ${W}/><path d="M20 12 v20" ${W}/><path d="M12 16 h4 M12 21 h4 M24 16 h4 M24 21 h4" stroke="${P.blanco}" stroke-width="2" stroke-linecap="round"/>`,
+  gear: (() => {
+    let teeth = '';
+    for (let a = 0; a < 360; a += 45) teeth += `<rect x="17.5" y="4" width="5" height="7" rx="1.5" fill="${P.blanco}" transform="rotate(${a} 20 20)"/>`;
+    return `${teeth}<circle cx="20" cy="20" r="10" fill="${P.blanco}"/><circle cx="20" cy="20" r="4" fill="${P.marino}"/>`;
+  })(),
+  back: `<path d="M24 8 l-12 12 l12 12 M13 20 h20" fill="none" stroke="${P.blanco}" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>`,
+  sound_on: `<path d="M6 15 h6 l8 -7 v24 l-8 -7 h-6 z" fill="${P.blanco}" stroke="${P.blanco}" stroke-width="3" stroke-linejoin="round"/><path d="M26 14 a8 8 0 0 1 0 12 M30 9 a14 14 0 0 1 0 22" ${W}/>`,
+  sound_off: `<path d="M6 15 h6 l8 -7 v24 l-8 -7 h-6 z" fill="${P.blanco}" stroke="${P.blanco}" stroke-width="3" stroke-linejoin="round"/><path d="M26 15 l10 10 M36 15 l-10 10" ${W}/>`,
+};
+const iconSVG = (name) => svg(40, 40, ICONS[name]);
+
+function btnRedXSVG() {
+  return svg(48, 48, `
+    <circle cx="24" cy="24" r="21" fill="#e53935" stroke="${P.blanco}" stroke-width="4"/>
+    <circle cx="24" cy="24" r="23" fill="none" stroke="${P.linea}" stroke-width="1.6"/>
+    <path d="M16 16 l16 16 M32 16 l-16 16" stroke="${P.blanco}" stroke-width="5" stroke-linecap="round"/>
+  `);
+}
+function btnGraySVG() {
+  return svg(48, 48, `
+    <rect x="1.5" y="1.5" width="45" height="45" rx="14" fill="${P.gris}" stroke="${P.marino}" stroke-width="3"/>
+    <path d="M6 14 a10 10 0 0 1 10 -9 h16 a10 10 0 0 1 10 9 z" fill="#6a7077" opacity="0.6"/>
+  `);
+}
+
+async function buildUI2() {
+  mkdirSync(`${OUT}/ui`, { recursive: true });
+  const out = {
+    retrato: retratoSVG(),
+    retrato_pulgar: retratoPulgarSVG(),
+    star_on: starSVG(true),
+    star_off: starSVG(false),
+    bar_bg: barBgSVG(),
+    bar_fill: barFillSVG(),
+    btn_red_x: btnRedXSVG(),
+    btn_gray: btnGraySVG(),
+  };
+  for (const n of Object.keys(ICONS)) out[`icon_${n}`] = iconSVG(n);
+  for (const [file, body] of Object.entries(out)) {
+    await sharp(Buffer.from(body)).png().toFile(`${OUT}/ui/${file}.png`);
+  }
+}
+
+// ---------- Menú: logo, fondo y miniaturas ----------
+const FONT = `font-family="'Arial Black', Arial, 'DejaVu Sans', sans-serif" font-weight="900"`;
+
+function mosquitoSVG(x, y, s) {
+  // Mosquito cartoon centrado en (0,0) escalado s, dentro de un grupo trasladado.
+  const o = O2(2.2);
+  return `<g transform="translate(${x} ${y}) scale(${s})">
+    <!-- alas -->
+    <ellipse cx="-4" cy="-16" rx="22" ry="8" fill="${P.celeste}" opacity="0.6" ${o} transform="rotate(-35 -4 -16)"/>
+    <ellipse cx="20" cy="-14" rx="22" ry="8" fill="${P.celeste}" opacity="0.6" ${o} transform="rotate(25 20 -14)"/>
+    <!-- patas -->
+    <path d="M-6 8 l-10 10 l-6 12 M6 10 l-2 14 l-8 8 M16 8 l10 10 l4 12" fill="none" stroke="${P.linea}" stroke-width="2.4" stroke-linecap="round"/>
+    <!-- abdomen -->
+    <path d="M-2 4 l-28 12 a5 5 0 0 0 4 8 l26 -6 z" fill="#3a3f44" ${o}/>
+    <path d="M-10 9 l-4 6 M-17 12 l-4 5" stroke="${P.linea}" stroke-width="2"/>
+    <!-- tórax -->
+    <ellipse cx="6" cy="2" rx="13" ry="10" fill="#4a4f55" ${o}/>
+    <!-- cabeza -->
+    <circle cx="24" cy="0" r="11" fill="#4a4f55" ${o}/>
+    <!-- ojos grandes -->
+    <circle cx="22" cy="-3" r="5.5" fill="${P.blanco}" ${o}/>
+    <circle cx="30" cy="-3" r="4.2" fill="${P.blanco}" ${o}/>
+    <circle cx="23" cy="-2.5" r="2.6" fill="${P.linea}"/>
+    <circle cx="31" cy="-2.5" r="2" fill="${P.linea}"/>
+    <!-- probóscide -->
+    <path d="M32 5 l20 14" fill="none" stroke="${P.linea}" stroke-width="5" stroke-linecap="round"/>
+    <path d="M32 5 l20 14" fill="none" stroke="#8a9096" stroke-width="2.2" stroke-linecap="round"/>
+  </g>`;
+}
+
+function noSignSVG(x, y, r) {
+  return `
+    <circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="${P.linea}" stroke-width="${r * 0.36}"/>
+    <path d="M${x - r * 0.68} ${y - r * 0.68} L${x + r * 0.68} ${y + r * 0.68}" stroke="${P.linea}" stroke-width="${r * 0.36}" stroke-linecap="round"/>
+    <circle cx="${x}" cy="${y}" r="${r}" fill="none" stroke="#e53935" stroke-width="${r * 0.22}"/>
+    <path d="M${x - r * 0.68} ${y - r * 0.68} L${x + r * 0.68} ${y + r * 0.68}" stroke="#e53935" stroke-width="${r * 0.22}" stroke-linecap="round"/>
+  `;
+}
+
+function logoSVG() {
+  const W0 = 640, H0 = 300;
+  const t = (txt, x, y, size, fill, stroke, sw, extra = '') =>
+    `<text x="${x}" y="${y}" text-anchor="middle" font-size="${size}" ${FONT} fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round" paint-order="stroke" ${extra}>${txt}</text>`;
+  // DENGUE con arco leve: cada letra con su propio offset vertical y rotación
+  const letters = 'DENGUE'.split('');
+  const dengue = (fill, stroke, sw, dy = 0) =>
+    letters.map((ch, i) => {
+      const u = (i - 2.5) / 2.5; // -1..1
+      const x = 165 + i * 80, y = 148 + 14 * u * u + dy, rot = u * 6;
+      return `<text x="${x}" y="${y}" text-anchor="middle" font-size="106" ${FONT} fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round" paint-order="stroke" transform="rotate(${rot} ${x} ${y})">${ch}</text>`;
+    }).join('');
+  return svg(W0, H0, `
+    <defs>
+      <linearGradient id="gy" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#ffe27a"/><stop offset="0.45" stop-color="${P.amarillo}"/><stop offset="1" stop-color="#f0932b"/>
+      </linearGradient>
+      <linearGradient id="gb" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#5a9cf5"/><stop offset="1" stop-color="${P.azulGorra}"/>
+      </linearGradient>
+    </defs>
+    <g transform="rotate(-3 350 150)">
+      <!-- sombra -->
+      ${dengue('rgba(0,0,0,0.35)', 'rgba(0,0,0,0.35)', 14, 8)}
+      ${dengue('url(#gy)', P.linea, 12)}
+      ${t('INVADERS', 330, 250, 60, 'url(#gb)', P.linea, 10, 'letter-spacing="6"')}
+      ${t('2D', 590, 250, 40, P.blanco, P.linea, 8)}
+    </g>
+    <text x="330" y="288" text-anchor="middle" font-size="24" font-family="Arial, 'DejaVu Sans', sans-serif" font-weight="bold" fill="${P.blanco}" stroke="${P.linea}" stroke-width="5" stroke-linejoin="round" paint-order="stroke">¡Juntos contra el dengue!</text>
+    ${mosquitoSVG(62, 56, 0.85)}
+    ${noSignSVG(68, 56, 46)}
+  `);
+}
+
+// Barrio top-down estilizado. seed varía disposición; opts.small = casas pequeñas y menos árboles
+function neighborhoodSVG(w, h, seed, opts = {}) {
+  let s = seed;
+  const rnd = () => ((s = (s * 9301 + 49297) % 233280) / 233280);
+  const g = [];
+  const grass = opts.grass || P.verde;
+  g.push(`<rect width="${w}" height="${h}" fill="${grass}"/>`);
+  const block = opts.block || 160, road = opts.road || 34;
+  // manzanas más oscuras
+  for (let y = -block / 2; y < h; y += block) {
+    for (let x = -block / 2; x < w; x += block) {
+      const shade = rnd() < 0.5 ? '#52b434' : (opts.dry || '#7fc84a');
+      g.push(`<rect x="${x + road / 2}" y="${y + road / 2}" width="${block - road}" height="${block - road}" fill="${shade}"/>`);
+    }
+  }
+  // calles
+  for (let x = -block / 2; x < w + block; x += block) {
+    g.push(`<rect x="${x - road / 2}" y="0" width="${road}" height="${h}" fill="${P.gris}"/>`);
+    g.push(`<rect x="${x - road / 2 - 5}" y="0" width="5" height="${h}" fill="#cfd3d6"/><rect x="${x + road / 2}" y="0" width="5" height="${h}" fill="#cfd3d6"/>`);
+    g.push(`<path d="M${x} 0 V${h}" stroke="${P.amarillo}" stroke-width="3" stroke-dasharray="14 12"/>`);
+  }
+  for (let y = -block / 2; y < h + block; y += block) {
+    g.push(`<rect x="0" y="${y - road / 2}" width="${w}" height="${road}" fill="${P.gris}"/>`);
+    g.push(`<rect x="0" y="${y - road / 2 - 5}" width="${w}" height="5" fill="#cfd3d6"/><rect x="0" y="${y + road / 2}" width="${w}" height="5" fill="#cfd3d6"/>`);
+    g.push(`<path d="M0 ${y} H${w}" stroke="${P.amarillo}" stroke-width="3" stroke-dasharray="14 12"/>`);
+  }
+  // casas y árboles por manzana
+  const o = O2(1.6);
+  for (let y = -block / 2; y < h; y += block) {
+    for (let x = -block / 2; x < w; x += block) {
+      const bx = x + road / 2 + 10, by = y + road / 2 + 10, bw = block - road - 20;
+      const n = opts.small ? 3 : 2;
+      const hs = Math.min(opts.small ? 22 : 40, (bw / n) * 0.8);
+      for (let i = 0; i < n * n; i++) {
+        if (rnd() < (opts.small ? 0.12 : 0.2)) continue;
+        const cx = bx + (i % n) * (bw / n) + rnd() * (bw / n - hs), cy = by + Math.floor(i / n) * (bw / n) + rnd() * (bw / n - hs);
+        const roof = rnd() < 0.7 ? P.teja : '#d5602e';
+        g.push(`<rect x="${cx + 3}" y="${cy + 4}" width="${hs}" height="${hs * 0.8}" fill="rgba(0,0,0,0.25)"/>`);
+        g.push(`<rect x="${cx}" y="${cy}" width="${hs}" height="${hs * 0.8}" fill="${roof}" ${o}/>`);
+        g.push(`<path d="M${cx} ${cy + hs * 0.4} h${hs}" stroke="${P.tejaOscura}" stroke-width="2.5"/>`);
+      }
+      const trees = opts.small ? 1 : 3;
+      for (let i = 0; i < trees; i++) {
+        if (rnd() < 0.3) continue;
+        const cx = bx + rnd() * bw, cy = by + rnd() * bw, r = 9 + rnd() * 8;
+        g.push(`<circle cx="${cx + 3}" cy="${cy + 4}" r="${r}" fill="rgba(0,0,0,0.25)"/>`);
+        g.push(`<circle cx="${cx}" cy="${cy}" r="${r}" fill="${P.verdeOscuro}" ${o}/>`);
+        g.push(`<circle cx="${cx - r * 0.3}" cy="${cy - r * 0.3}" r="${r * 0.5}" fill="${P.verde}"/>`);
+      }
+    }
+  }
+  return g.join('');
+}
+
+async function buildMenu() {
+  mkdirSync(`${OUT}/img`, { recursive: true });
+  await sharp(Buffer.from(logoSVG())).png().toFile(`${OUT}/img/logo.png`);
+
+  // Fondo del menú: barrio desenfocado + velo celeste 15%
+  const bg = await sharp(Buffer.from(svg(960, 540, neighborhoodSVG(960, 540, 42)))).png().blur(2).toBuffer();
+  const veil = Buffer.from(svg(960, 540, `<rect width="960" height="540" fill="${P.celeste}" opacity="0.15"/>`));
+  await sharp(bg).composite([{ input: veil }]).png().toFile(`${OUT}/img/menu_bg.png`);
+
+  // Miniaturas de nivel (borde redondeado 8px)
+  const thumb = async (file, body) => {
+    const mask = Buffer.from(svg(256, 160, `<rect width="256" height="160" rx="8" fill="#fff"/>`));
+    const img = await sharp(Buffer.from(svg(256, 160, body + `<rect x="1.5" y="1.5" width="253" height="157" rx="7" fill="none" stroke="${P.linea}" stroke-width="3"/>`))).png().toBuffer();
+    await sharp(img).composite([{ input: mask, blend: 'dest-in' }]).png().toFile(`${OUT}/img/${file}.png`);
+  };
+  await thumb('level_equipetrol', neighborhoodSVG(256, 160, 7, { block: 110, road: 22 }));
+  await thumb('level_plan3000', neighborhoodSVG(256, 160, 99, { block: 96, road: 18, small: true, grass: P.oliva, dry: '#b7c26a' }));
+}
+
+await buildUI2();
+await buildMenu();
+console.log('UI y menú generados');

@@ -1,7 +1,20 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
+import { AudioManager } from '../systems/AudioManager.js';
 
 const BASE = import.meta.env.BASE_URL + 'assets/';
+
+// Kit de UI (public/assets/ui/*.png) e imágenes de menú/selección (public/assets/img/*.png).
+// Key = nombre de archivo sin extensión. Las escenas tienen fallback si alguna falta.
+const UI_KEYS = [
+  'alert', 'bar_bg', 'bar_fill', 'btn_gray', 'btn_green', 'btn_red_x', 'icon_back', 'icon_book',
+  'icon_camera', 'icon_gear', 'icon_lock', 'icon_share', 'icon_sound_off', 'icon_sound_on', 'key_e',
+  'panel', 'retrato', 'retrato_pulgar', 'star_off', 'star_on',
+];
+const IMG_KEYS = ['level_equipetrol', 'level_plan3000', 'logo', 'menu_bg'];
+
+// Audio (keys documentadas en systems/AudioManager.js). Los genera tools/gen-sfx.mjs.
+const SFX_FILES = ['step', 'detect', 'gluglu', 'pop', 'points', 'win', 'click'];
 
 export class BootScene extends Phaser.Scene {
   constructor() { super('Boot'); }
@@ -13,6 +26,8 @@ export class BootScene extends Phaser.Scene {
     this.add.text(width / 2, height / 2 - 30, 'Cargando el barrio...', { fontFamily: 'Arial, sans-serif', fontSize: 18, color: PALETTE.blanco }).setOrigin(0.5);
     this.load.on('progress', (v) => { bar.width = 312 * v; });
     this.load.on('complete', () => { box.destroy(); bar.destroy(); });
+    // Un asset ausente no debe frenar el arranque: las escenas tienen fallbacks.
+    this.load.on('loaderror', (file) => console.warn('[Boot] no se pudo cargar', file?.key));
 
     this.load.atlas('player', BASE + 'anim/player.png', BASE + 'anim/player.json');
     this.load.spritesheet('tiles', BASE + 'tiles/tileset.png', { frameWidth: 64, frameHeight: 64 });
@@ -22,12 +37,18 @@ export class BootScene extends Phaser.Scene {
     for (const k of ['casa_a', 'casa_b', 'arbusto', 'muro_h', 'muro_v', 'porton', 'tanque_techo']) {
       this.load.image(k, BASE + `sprites/${k}.png`);
     }
-    // Fase 3: criaderos (3 estados + capa de agua), partículas y kit de UI. Los genera tools/gen-assets.mjs.
+    // Fase 3: criaderos (3 estados + capa de agua), partículas. Los genera tools/gen-assets.mjs.
     for (const t of ['llanta', 'tanque', 'balde', 'botella', 'florero']) {
       for (const k of [`${t}_agua`, `${t}_vacio`, `${t}_limpio`, `agua_${t}`]) this.load.image(k, BASE + `sprites/${k}.png`);
     }
     for (const k of ['drop', 'spark', 'noise']) this.load.image(k, BASE + `sprites/${k}.png`);
-    for (const k of ['alert', 'key_e', 'panel', 'btn_green']) this.load.image(k, BASE + `ui/${k}.png`);
+
+    for (const k of UI_KEYS) this.load.image(k, BASE + `ui/${k}.png`);
+    for (const k of IMG_KEYS) this.load.image(k, BASE + `img/${k}.png`);
+
+    for (const s of SFX_FILES) this.load.audio(`sfx_${s}`, BASE + `audio/${s}.wav`);
+    this.load.audio('music', BASE + 'audio/music.wav');
+
     // Nivel generado por tools/gen-level.mjs (src/levels/equipetrol.json), servido como asset de Vite.
     this.load.json('level_equipetrol', new URL('../levels/equipetrol.json', import.meta.url).href);
   }
@@ -43,6 +64,7 @@ export class BootScene extends Phaser.Scene {
       });
       this.anims.create({ key: `idle_${dir}`, frames: [{ key: 'player', frame: `${dir}_0` }] });
     }
-    this.scene.start('Game');
+    AudioManager.init(this);
+    this.scene.start('Menu');
   }
 }

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
+import { playElimination } from '../systems/EliminationFX.js';
 
 const SIZE = 64;
 
@@ -27,7 +28,8 @@ export class Criadero extends Phaser.Physics.Arcade.Sprite {
     this.type = type;
     this.state = 'agua';
     this.detected = false;
-    this.waterKey = 'agua_' + type; // lo usará EliminationFX en la fase 4
+    this.waterKey = 'agua_' + type; // capa de agua usada por EliminationFX
+    this.cleanPromise = null;
 
     scene.add.existing(this);
     scene.physics.add.existing(this, true); // cuerpo estático: no bloquea al jugador (sin collider)
@@ -94,29 +96,29 @@ export class Criadero extends Phaser.Physics.Arcade.Sprite {
     this.halo.setVisible(false);
   }
 
-  /** Limpieza simple (fase 3). En la fase 4 la reemplaza EliminationFX. */
+  /**
+   * Limpieza con la animación estrella (EliminationFX, ~3.3 s).
+   * state: 'limpiando' → 'limpio'; emite 'cleaned' (this) al terminar. Reentrada bloqueada.
+   * Si algo falla (texturas ausentes, escena cerrada), termina en 'limpio' igualmente.
+   */
   clean() {
-    if (this.state === 'limpiando' || this.state === 'limpio') return Promise.resolve(this);
+    if (this.cleanPromise) return this.cleanPromise;
+    if (this.state === 'limpio') return Promise.resolve(this);
     this.state = 'limpiando';
     this.detected = false;
     this.stopPulse();
     const scene = this.scene;
-    return new Promise((resolve) => {
-      scene.time.delayedCall(300, () => {
-        this.setTexture(Criadero.textureFor(scene, this.type, 'vacio'));
-        scene.time.delayedCall(300, () => {
-          this.setTexture(Criadero.textureFor(scene, this.type, 'limpio'));
-          this.state = 'limpio';
-          scene.tweens.add({
-            targets: this, scale: 1.15, duration: 120, yoyo: true, ease: 'Back.easeOut',
-            onComplete: () => {
-              this.setScale(1);
-              this.emit('cleaned', this);
-              resolve(this);
-            },
-          });
-        });
+    this.cleanPromise = playElimination(scene, this)
+      .catch((err) => {
+        console.warn('[Criadero] EliminationFX falló, aplicando estado limpio directo', err);
+        if (this.scene) this.setTexture(Criadero.textureFor(scene, this.type, 'limpio'));
+      })
+      .then(() => {
+        if (this.scene) this.setScale(1);
+        this.state = 'limpio';
+        this.emit('cleaned', this);
+        return this;
       });
-    });
+    return this.cleanPromise;
   }
 }

@@ -1,6 +1,12 @@
 import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene.js';
+import { MenuScene } from './scenes/MenuScene.js';
+import { LevelSelectScene } from './scenes/LevelSelectScene.js';
 import { GameScene } from './scenes/GameScene.js';
+import { HUDScene } from './scenes/HUDScene.js';
+import { PopupScene } from './scenes/PopupScene.js';
+import { LevelEndScene } from './scenes/LevelEndScene.js';
+import { PhotoScene } from './scenes/PhotoScene.js';
 import { PALETTE } from './data/palette.js';
 
 export const GAME_W = 960;
@@ -23,7 +29,8 @@ const game = new Phaser.Game({
     arcade: { debug: false },
   },
   input: { activePointers: 3 },
-  scene: [BootScene, GameScene],
+  // Orden: Boot arranca; Menu → LevelSelect → Game (+HUD, Popup, LevelEnd y Photo en paralelo).
+  scene: [BootScene, MenuScene, LevelSelectScene, GameScene, HUDScene, PopupScene, LevelEndScene, PhotoScene],
 });
 
 // Acceso para pruebas automatizadas y depuración en consola.

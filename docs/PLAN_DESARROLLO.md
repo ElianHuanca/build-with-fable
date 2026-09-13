@@ -203,3 +203,17 @@ build-with-fable/
 ## 7. Próximo paso inmediato
 
 Etapa 1: crear el proyecto Vite + Phaser, la paleta, el script de generación de assets con el personaje de 4 direcciones y el movimiento. Al cerrarla, se sube una URL de vista previa para validar el estilo antes de dibujar el resto.
+
+---
+
+## 8. Estado de avance
+
+El seguimiento real de cada etapa (qué está hecho, en curso o pendiente, archivos clave,
+decisiones y pendientes conocidos) se lleva en [PROGRESO.md](PROGRESO.md). La referencia
+técnica de escenas, eventos, formato de nivel y keys de assets está en
+[ARQUITECTURA.md](ARQUITECTURA.md).
+
+Resumen al 2026-09-13: etapas 1 a 3 hechas y probadas; etapa 4 (EliminationFX + audio)
+hecha a nivel de sistemas; etapas 5 (HUD, misiones, popup, fin de nivel, guardado) y 6
+(menú, selección, modo foto) construidas como escenas y en integración con `GameScene`;
+etapa 7 (documentación y despliegue en GitHub Pages) en curso.
