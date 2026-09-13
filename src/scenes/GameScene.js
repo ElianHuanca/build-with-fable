@@ -6,7 +6,7 @@ import { Vehiculo } from '../objects/Vehiculo.js';
 import { Joystick } from '../systems/Joystick.js';
 import { InteractionPrompt } from '../systems/InteractionPrompt.js';
 import { TouchControls, PauseMenu } from '../systems/TouchControls.js';
-import { buildLevel, zoneAt } from '../systems/LevelLoader.js';
+import { buildLevel, zoneAt, OBJECT_DEFS } from '../systems/LevelLoader.js';
 import { ScoreManager } from '../systems/ScoreManager.js';
 import { MissionManager } from '../systems/MissionManager.js';
 import { OutbreakManager } from '../systems/OutbreakManager.js';
@@ -14,6 +14,7 @@ import { EpidemicMeter } from '../systems/EpidemicMeter.js';
 import { Minimap } from '../systems/Minimap.js';
 import { Compass } from '../systems/Compass.js';
 import { AlertToast } from '../systems/AlertToast.js';
+import { applyCameraZoom } from '../systems/CameraZoom.js';
 import { saveSystem } from '../systems/SaveSystem.js';
 import { AudioManager } from '../systems/AudioManager.js';
 import { PALETTE } from '../data/palette.js';
@@ -34,6 +35,10 @@ const RADIO_DETECCION_BROTE = 90;
 const UMBRAL_RIESGO = 60;
 /** Puntos por fumigar un brote, según su nivel (mockup sección 1.3/1.6). */
 const PUNTOS_BROTE = { pequeno: 75, medio: 90, grande: 100 };
+/** Dónde nace la camioneta si el nivel no trae `garaje`: junto a la estación, sobre la calle. */
+const GARAJE_OFFSET = { x: 96, y: 56 };
+/** Velocidad mínima (px/s) para que suene el motor de la camioneta. */
+const MOTOR_MIN_SPEED = 5;
 
 /**
  * Escena de juego: el barrio con criaderos detectables y eliminables, más la jornada v2
@@ -84,8 +89,12 @@ export class GameScene extends Phaser.Scene {
     // si el nivel todavía no trae ese campo.
     const puntoEstacion = data.estacion || level.spawn;
     this.estacion = new Estacion(this, puntoEstacion.x, puntoEstacion.y);
-    this.vehiculo = new Vehiculo(this, puntoEstacion.x, puntoEstacion.y);
+    // La camioneta se estaciona al lado del edificio (no encima: el edificio la taparía).
+    const puntoGaraje = data.garaje || { x: puntoEstacion.x + GARAJE_OFFSET.x, y: puntoEstacion.y + GARAJE_OFFSET.y };
+    this.vehiculo = new Vehiculo(this, puntoGaraje.x, puntoGaraje.y);
     this.enVehiculo = false;
+    this.motorOn = false;
+    this.fumigando = null;   // brote que se está fumigando (mantener E)
     this.saliDeEstacion = false;
     this.tipEstacionMostrado = false;
 
@@ -102,11 +111,14 @@ export class GameScene extends Phaser.Scene {
     this.keyE = this.input.keyboard.addKey('E');
     this.keyEsc = this.input.keyboard.addKey('ESC');
     this.keyV = this.input.keyboard.addKey('V');
+    this.keyF = this.input.keyboard.addKey('F'); // alias de V para subir/bajar de la camioneta
 
     // Puntaje, misiones y reloj
     this.score = new ScoreManager();
     this.missions = new MissionManager({ total: this.total, misionFamilia: data.mision_familia || null });
-    this.tiempoInicio = this.time.now;
+    // `time.now` no se actualiza hasta el primer update de la escena (en create() trae el valor de
+    // la última vez que corrió): con él la jornada arrancaría con los segundos del menú ya gastados.
+    this.tiempoInicio = this.game.loop.time;
     this.segundos = JORNADA_SEG;
     this.currentZone = null;
 
@@ -114,6 +126,7 @@ export class GameScene extends Phaser.Scene {
     this.outbreakManager = new OutbreakManager(this, {
       criaderos: this.criaderos,
       bounds: { x: 0, y: 0, w: level.widthPx, h: level.heightPx },
+      solidos: (data.objects || []).filter((o) => OBJECT_DEFS[o.type]?.solid),
     });
     this.brotesConocidos = new WeakSet();
     this.brotesVistos = false;
@@ -155,6 +168,8 @@ export class GameScene extends Phaser.Scene {
     AudioManager.bind(this);
     AudioManager.playMusic();
 
+    // Zoom automático + cámara de UI sin zoom (debe ir con toda la UI de la escena ya creada).
+    applyCameraZoom(this);
     this.registrarEventos();
     this.scene.launch('HUD');
   }
@@ -173,6 +188,7 @@ export class GameScene extends Phaser.Scene {
       }),
       on('popup:cerrado', () => this.alCerrarPopup()),
       on('nivel:continuar', () => { this.scene.stop('HUD'); this.scene.start('LevelSelect'); }),
+      on('nivel:reintentar', () => this.reintentar()),
       on('nivel:foto', () => this.scene.launch('Photo', { antes: FOTO_ANTES, despues: FOTO_DESPUES })),
       on('foto:cerrar', () => this.scene.launch('LevelEnd', this.resultado)),
     ];
@@ -217,25 +233,42 @@ export class GameScene extends Phaser.Scene {
     if (restante <= 0) { this.finDeNivel('tiempo'); return; }
 
     // Brotes y medidor de epidemia
-    this.outbreakManager.update(this.time.now, this.game.loop.delta);
+    this.outbreakManager.update(this.time.now - this.tiempoInicio);
     this.epidemicMeter.tick(this.game.loop.delta, {
       brotesActivos: this.outbreakManager.activos,
       criaderosSucios: Math.max(0, this.total - this.limpios),
     });
-    this.registry.set('epidemia', this.epidemicMeter.valor);
-    if (this.epidemicMeter.valor >= UMBRAL_RIESGO) this.superoUmbral = true;
+    // Solo se publica al cambiar el entero: escribirlo cada frame reinicia el tween de la barra del
+    // HUD (450 ms) antes de que avance y la barra se queda visualmente en 0 %.
+    const epidemiaEntera = Math.round(this.epidemicMeter.valor);
+    if (epidemiaEntera !== this.registry.get('epidemia')) this.registry.set('epidemia', epidemiaEntera);
+    if (this.epidemicMeter.valor >= UMBRAL_RIESGO && !this.superoUmbral) {
+      this.superoUmbral = true;
+      this.alertToast.mostrar('¡El barrio está en riesgo! Fumiga los brotes y limpia los criaderos.', 4000);
+    }
     if (this.epidemicMeter.valor >= 100) { this.finDeNivel('epidemia'); return; }
 
     this.actualizarDeteccion();
     this.actualizarEstacionTip();
+    this.actualizarMotor();
 
     this.minimap.update();
     this.compass.update(this.broteMasCercano());
 
     this.touch?.update({ activo: this.activo || this.broteActivo, limpiando: this.limpiando });
 
-    if (Phaser.Input.Keyboard.JustDown(this.keyE)) this.intentarLimpiar();
-    if (Phaser.Input.Keyboard.JustDown(this.keyV)) this.toggleVehiculo();
+    // E: un toque limpia el criadero; sobre un brote hay que MANTENER la tecla (soltar cancela).
+    if (Phaser.Input.Keyboard.JustDown(this.keyE)) this.accionInicio();
+    if (Phaser.Input.Keyboard.JustUp(this.keyE)) this.accionFin();
+    if (Phaser.Input.Keyboard.JustDown(this.keyV) || Phaser.Input.Keyboard.JustDown(this.keyF)) this.toggleVehiculo();
+  }
+
+  /** Loop del motor mientras el agente va en la camioneta y se mueve. */
+  actualizarMotor() {
+    const on = this.enVehiculo && this.player.body.speed > MOTOR_MIN_SPEED;
+    if (on === this.motorOn) return;
+    this.motorOn = on;
+    this.events.emit(on ? 'sfx:loop' : 'sfx:stop', 'motor');
   }
 
   /** Esc o botón PAUSA: abre/cierra el menú de pausa (no durante la limpieza ni al terminar). */
@@ -277,11 +310,14 @@ export class GameScene extends Phaser.Scene {
     if (this.limpiando) return; // durante la limpieza/fumigación el objetivo se mantiene fijo
     const { x, y } = this.player.body.center;
 
+    // Desde la camioneta se fumiga, pero no se limpian criaderos (hay que bajarse).
     let nearestC = null, bestC = Criadero.RADIO_DETECCION;
-    for (const c of this.criaderos) {
-      if (c.state === 'limpio') continue;
-      const d = Phaser.Math.Distance.Between(x, y, c.x, c.y);
-      if (d <= bestC) { bestC = d; nearestC = c; }
+    if (!this.enVehiculo) {
+      for (const c of this.criaderos) {
+        if (c.state === 'limpio') continue;
+        const d = Phaser.Math.Distance.Between(x, y, c.x, c.y);
+        if (d <= bestC) { bestC = d; nearestC = c; }
+      }
     }
 
     let nearestB = null;
@@ -306,6 +342,7 @@ export class GameScene extends Phaser.Scene {
     this._objetivoPrompt = objetivo;
     if (objetivo) {
       this.events.emit('sfx', 'detect');
+      this.prompt.setModo(this.activo ? 'criadero' : 'brote');
       this.prompt.show();
       this.prompt.showLabelAt(objetivo.x, objetivo.y - 40);
     } else {
@@ -330,6 +367,7 @@ export class GameScene extends Phaser.Scene {
       this.vehiculo.bajar(this.player.x, this.player.y);
       this.player.setVehiculoFactor(1);
       this.enVehiculo = false;
+      this.actualizarMotor();
       return;
     }
     if (!(this.estacion.cerca(this.player) || this.vehiculo.cerca(this.player))) return;
@@ -360,10 +398,25 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  /** Punto de entrada de la tecla E / botón ACCIÓN: el criadero cercano tiene prioridad sobre el brote. */
+  /**
+   * Punto de entrada del botón ACCIÓN táctil (un toque): el criadero cercano tiene prioridad
+   * sobre el brote. Como TouchControls no distingue "mantener", sobre un brote la fumigación
+   * corre sola hasta el final.
+   */
   intentarLimpiar() {
     if (this.activo) return this.limpiarCriadero(this.activo);
-    if (this.broteActivo) return this.fumigarBrote(this.broteActivo);
+    if (this.broteActivo) return this.fumigarBrote(this.broteActivo, { mantener: false });
+  }
+
+  /** Tecla E presionada: limpia el criadero (un toque) o empieza a fumigar el brote (mantener). */
+  accionInicio() {
+    if (this.activo) return this.limpiarCriadero(this.activo);
+    if (this.broteActivo) return this.fumigarBrote(this.broteActivo, { mantener: true });
+  }
+
+  /** Tecla E soltada: si se estaba fumigando "manteniendo", se interrumpe (el brote sigue activo). */
+  accionFin() {
+    if (this.fumigando) this.fumigando.cancelarFumigacion();
   }
 
   async limpiarCriadero(c) {
@@ -410,13 +463,16 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Fumigar un brote (mockup sección 1.3): FumigationFX ya se ocupa de la duración (2,5 s a pie,
-   * 1,5 s con `enVehiculo`), acá solo bloqueamos al jugador mientras corre y sumamos puntos/tip
-   * al terminar. Sin popup educativo (a diferencia de los criaderos): el aviso ya lo dio AlertToast.
+   * Fumigar un brote (GDD sección 3): FumigationFX ya se ocupa de la duración (2,5 s a pie,
+   * 1,5 s con `enVehiculo`, ×1,5 si es grande), acá solo bloqueamos al jugador mientras corre y
+   * sumamos puntos/tip al terminar. Con `mantener` (tecla E) soltar la tecla cancela la
+   * fumigación (ver accionFin) y el brote sigue activo; sin `mantener` (botón táctil) corre sola.
+   * Sin popup educativo (a diferencia de los criaderos): el aviso ya lo dio AlertToast.
    */
-  async fumigarBrote(b) {
+  async fumigarBrote(b, { mantener = false } = {}) {
     if (!b || this.limpiando || this.terminado || this.pausa.abierta || b.state !== 'activo') return;
     this.limpiando = true;
+    this.fumigando = mantener ? b : null;
     this.broteActivo = null;
     this.prompt.hide();
     this.prompt.hideLabel();
@@ -425,21 +481,27 @@ export class GameScene extends Phaser.Scene {
     this.player.setVelocity(0);
     this.player.play(`idle_${this.player.dir}`, true);
     this.prompt.setBusy(true);
+    this.actualizarMotor();
 
     const nivel = b.nivel;
+    let completado = false;
     try {
-      await b.fumigar({ rapido: this.enVehiculo });
+      completado = await b.fumigar({ rapido: this.enVehiculo });
     } finally {
-      if (!this.sys.settings.active && !this.sys.isPaused()) return; // la escena se cerró durante la animación
-      const puntos = PUNTOS_BROTE[nivel] ?? PUNTOS_BROTE.pequeno;
-      this.sumarPuntos(puntos);
-      this.textoFlotante(b.x, b.y - 24, `+${puntos}`, PALETTE.amarillo);
-      this.epidemicMeter.registrarFumigado(nivel);
-      this.mostrarTip('fumigar');
-
-      this.player.bloqueado = false;
-      this.prompt.setBusy(false);
-      this.limpiando = false;
+      this.fumigando = null;
+      if (this.sys.settings.active || this.sys.isPaused()) { // si no, la escena se cerró durante la animación
+        if (completado) {
+          const puntos = PUNTOS_BROTE[nivel] ?? PUNTOS_BROTE.pequeno;
+          this.sumarPuntos(puntos);
+          this.textoFlotante(b.x, b.y - 24, `+${puntos}`, PALETTE.amarillo);
+          this.epidemicMeter.registrarFumigado(nivel);
+          this.mostrarTip('fumigar');
+        }
+        this.player.bloqueado = false;
+        this.prompt.setBusy(false);
+        this._objetivoPrompt = null; // que actualizarDeteccion vuelva a mostrar el cartel si sigue en rango
+        this.limpiando = false;
+      }
     }
   }
 
@@ -496,6 +558,13 @@ export class GameScene extends Phaser.Scene {
     this.scene.sleep('HUD');
     this.scene.launch('LevelEnd', this.resultado);
     this.scene.pause();
+  }
+
+  /** "Intentar de nuevo" en la pantalla de fin: reinicia la jornada del mismo nivel desde cero. */
+  reintentar() {
+    this.scene.stop('HUD');
+    if (this.sys.isPaused()) this.scene.resume();
+    this.scene.restart({ levelId: this.levelId });
   }
 
   salirAlMenu() {
@@ -570,5 +639,15 @@ export class GameScene extends Phaser.Scene {
     this.player.body.reset(x, y);
     this.player.setDepth(y);
     this.cameras.main.centerOn(x, y);
+  }
+
+  /** Crea un brote en (x, y) para pruebas (pasa por el OutbreakManager: aviso, minimapa, brújula). */
+  debugSpawnBrote(x, y) {
+    return this.outbreakManager.spawn({ x, y });
+  }
+
+  /** Avanza el reloj de la jornada `seg` segundos (pruebas del fin por tiempo). */
+  debugTiempo(seg) {
+    this.tiempoInicio -= seg * 1000;
   }
 }

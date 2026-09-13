@@ -44,9 +44,10 @@ export class InteractionPrompt {
       fontFamily: 'Arial, sans-serif', fontSize: 20, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5, 0.55);
 
-    const title = scene.add.text(iconX + 22, iconY, '¡Criadero detectado!', {
+    this.title = scene.add.text(iconX + 22, iconY, '¡Criadero detectado!', {
       fontFamily: 'Arial, sans-serif', fontSize: 18, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0, 0.5);
+    const title = this.title;
 
     // Botón
     const btnY = PANEL_H / 2 - 8 - BTN_H / 2;
@@ -58,10 +59,10 @@ export class InteractionPrompt {
     const keyText = scene.add.text(-BTN_W / 2 + 22, 0, 'E', {
       fontFamily: 'Arial, sans-serif', fontSize: 15, fontStyle: 'bold', color: PALETTE.verdeOscuro,
     }).setOrigin(0.5);
-    const label = scene.add.text(-BTN_W / 2 + 44, 0, 'Eliminar agua', {
+    this.label = scene.add.text(-BTN_W / 2 + 44, 0, 'Eliminar agua', {
       fontFamily: 'Arial, sans-serif', fontSize: 16, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0, 0.5);
-    this.button.add([this.btnBg, keyBox, keyText, label]);
+    this.button.add([this.btnBg, keyBox, keyText, this.label]);
     // Área táctil mayor que el dibujo (≥ 44 CSS px en teléfonos con Scale.FIT).
     this.button.setSize(...touchSize(BTN_W, BTN_H))
       .setInteractive({ useHandCursor: true })
@@ -87,21 +88,40 @@ export class InteractionPrompt {
     this.button.setScrollFactor(0, 0, true);
 
     // Etiqueta flotante en el mundo
-    const labelText = this.sinBoton ? 'Toca el botón' : this.isTouch ? 'Toca Eliminar' : 'Presiona E';
     this.worldLabel = scene.add.container(0, 0).setDepth(DEPTH - 1).setVisible(false);
-    const lt = scene.add.text(0, 0, labelText, {
+    this.worldText = scene.add.text(0, 0, '', {
       fontFamily: 'Arial, sans-serif', fontSize: 14, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5);
-    const lw = lt.width + 14, lh = lt.height + 8;
-    const lbg = scene.add.graphics();
-    lbg.fillStyle(hex(PALETTE.marino), 0.9).fillRoundedRect(-lw / 2, -lh / 2, lw, lh, 6);
-    lbg.lineStyle(2, hex(PALETTE.celeste), 1).strokeRoundedRect(-lw / 2, -lh / 2, lw, lh, 6);
-    this.worldLabel.add([lbg, lt]);
+    this.worldBg = scene.add.graphics();
+    this.worldLabel.add([this.worldBg, this.worldText]);
+    this.modo = null;
+    this.setModo('criadero');
 
     // `scale` es del juego (compartido entre escenas): sin quitar el listener en destroy() quedaría
     // sonando sobre un container ya destruido cada vez que se reinicia GameScene (rejugar un nivel).
     this.onResize = (size) => this.container.setX(size.width / 2);
     scene.scale.on('resize', this.onResize);
+  }
+
+  /**
+   * Textos según el objetivo: 'criadero' ("¡Criadero detectado!", "E · Eliminar agua", "Presiona E")
+   * o 'brote' ("¡Brote de mosquitos!", "E · Fumigar", "Mantén E").
+   * @param {'criadero'|'brote'} modo
+   */
+  setModo(modo) {
+    if (modo === this.modo) return;
+    this.modo = modo;
+    const brote = modo === 'brote';
+    this.title.setText(brote ? '¡Brote de mosquitos!' : '¡Criadero detectado!');
+    this.label.setText(brote ? 'Fumigar' : 'Eliminar agua');
+    const etiqueta = this.sinBoton ? 'Toca el botón'
+      : this.isTouch ? (brote ? 'Toca Fumigar' : 'Toca Eliminar')
+        : (brote ? 'Mantén E' : 'Presiona E');
+    this.worldText.setText(etiqueta);
+    const lw = this.worldText.width + 14, lh = this.worldText.height + 8;
+    this.worldBg.clear();
+    this.worldBg.fillStyle(hex(PALETTE.marino), 0.9).fillRoundedRect(-lw / 2, -lh / 2, lw, lh, 6);
+    this.worldBg.lineStyle(2, hex(PALETTE.celeste), 1).strokeRoundedRect(-lw / 2, -lh / 2, lw, lh, 6);
   }
 
   drawButton(color) {

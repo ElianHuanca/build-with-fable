@@ -1,14 +1,12 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
-import { esModoTactil } from '../data/ui.js';
+import { esModoTactil, touchSize } from '../data/ui.js';
 import { Layout } from '../systems/Layout.js';
 
 const FONT = 'Arial, sans-serif';
 const MARGEN = 12;
 const PANEL_W = 250;
 const RADIO = 12;
-const RETRATO = 44;
-const STAR_R = 11;
 const DEPTH_PANEL = 10;
 const DEPTH_DATO = 20;
 const TWEEN_BARRA_MS = 450;
@@ -19,6 +17,27 @@ const UMBRAL_RIESGO = 60;
 const OFFSET_PAUSA_TACTIL = 60;
 /** Separación entre el panel "Barrio protegido" y el de "Riesgo de epidemia". */
 const GAP_PANELES = 8;
+/** Ancho mínimo de los paneles de la derecha cuando se encogen para caber lado a lado (horizontal). */
+const PANEL_MIN_W = 200;
+/** Tiempo que la lista de misiones queda desplegada en vertical al tocar "?". */
+const MISIONES_DESPLEGADAS_MS = 3000;
+
+/** Panel de jugador: horizontal (como v1) y vertical (compacto). */
+const JUGADOR = {
+  horizontal: { w: PANEL_W, h: 68, retrato: 44, star: 11, puntos: 18 },
+  vertical: { w: 136, h: 56, retrato: 34, star: 7, puntos: 14 },
+};
+
+/** Reserva para el minimapa (arriba-derecha; lo dibuja GameScene). Lo comparte Minimap.js. */
+export const MINIMAPA = { margen: 12, top: 56, vertical: 100, horizontal: 148 };
+/** Clave del registry: y (px) a partir de la cual la columna derecha queda libre para el minimapa. */
+export const HUD_KEY_DERECHA_Y = 'hudDerechaY';
+/**
+ * Clave del registry (horizontal): `{ x0, x1, y1 }` = franja libre arriba entre el panel de
+ * misiones (x0) y el primer panel de la derecha (x1); y1 = borde inferior de la fila de paneles.
+ * La usa AlertToast para no tapar los paneles.
+ */
+export const HUD_KEY_LIBRE = 'hudLibre';
 
 /**
  * Claves del registry que la HUD lee (las escribe GameScene):
@@ -29,13 +48,26 @@ const GAP_PANELES = 8;
 export const HUD_KEYS = ['puntos', 'estrellas', 'limpios', 'total', 'progreso', 'zona', 'misiones', 'tiempo', 'epidemia'];
 
 /**
- * Overlay de información (mockup): retrato + puntos + estrellas, misiones con
- * casillas, barra "Barrio protegido" y dato educativo abajo al centro.
- * Se lanza en paralelo: `this.scene.launch('HUD')` desde GameScene.
- * Deja libre el centro superior (x 350–610, y 20–120) para el cartel de detección.
+ * Overlay de información. Se lanza en paralelo: `this.scene.launch('HUD')` desde GameScene.
+ *
+ * Horizontal / escritorio (como v1): retrato + puntos + estrellas y lista de misiones a la
+ * izquierda; "Barrio protegido" (con reloj) y "Riesgo de epidemia" arriba a la derecha (lado a
+ * lado si caben, si no apilados); dato educativo abajo al centro.
+ *
+ * Vertical (Layout.isPortrait): panel compacto de jugador arriba-izquierda; arriba-centro el
+ * reloj y dos barras finas (verde barrio, roja riesgo) con %; una sola línea "Misión: … n/m" con
+ * botón "?" que despliega la lista 3 s; la esquina superior derecha queda libre para el minimapa
+ * (MINIMAPA) y el botón de pausa. Todo se reacomoda con Layout.onResize.
  */
 export class HUDScene extends Phaser.Scene {
   constructor() { super({ key: 'HUD' }); }
+
+  /** Rectángulo reservado para el minimapa según orientación (útil para quien lo dibuje). */
+  static rectMinimapa(scene) {
+    const { w } = Layout.size(scene);
+    const s = Layout.isPortrait(scene) ? MINIMAPA.vertical : MINIMAPA.horizontal;
+    return { x: w - MINIMAPA.margen - s, y: MINIMAPA.top, w: s, h: s };
+  }
 
   create() {
     this.estado = {
@@ -45,24 +77,32 @@ export class HUDScene extends Phaser.Scene {
       const v = this.registry.get(k);
       if (v !== undefined) this.estado[k] = v;
     }
+    this.tactil = esModoTactil(this.sys.game);
+    this.barraValor = this.estado.progreso || 0;                 // valor animado 0..1
+    this.epiValor = (this.estado.epidemia || 0) / 100;           // valor animado 0..1
+    this.misionesDesplegadas = false;
+    this.misionesTimer = null;
 
-    this.crearPanelJugador();
+    this.crearPanelJugador(Layout.isPortrait(this));
     this.crearPanelMisiones();
-    this.crearPanelBarrio();
-    this.crearPanelEpidemia();
-    this.posicionarEpidemia();
+    this.crearMisionLinea();
+    this.barrio = this.crearPanelBarra('Barrio protegido', PALETTE.celeste, PALETTE.verde, true);
+    this.epidemia = this.crearPanelBarra('Riesgo de epidemia', ROJO_EPIDEMIA, null, false);
+    this.crearPanelCentro();
     this.crearDato();
 
+    // Un restart de Game puede relanzar el HUD antes de que el anterior termine de cerrarse:
+    // quitar cualquier listener previo antes de registrar el nuevo.
+    if (this.onChange) this.registry.events.off('changedata', this.onChange);
     this.onChange = (parent, key, value) => this.aplicar(key, value);
     this.registry.events.on('changedata', this.onChange);
-    this.onResize = (size) => this.reposicionar(size.width, size.height);
-    this.scale.on('resize', this.onResize);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.registry.events.off('changedata', this.onChange);
-      this.scale.off('resize', this.onResize);
       if (this.datoTimer) this.datoTimer.remove();
+      if (this.misionesTimer) this.misionesTimer.remove();
     });
 
+    Layout.onResize(this, (w, h) => this.reposicionar(w, h));
     this.refrescarTodo();
   }
 
@@ -92,52 +132,67 @@ export class HUDScene extends Phaser.Scene {
       pts.push(new Phaser.Math.Vector2(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad));
     }
     g.fillStyle(hex(color), 1).fillPoints(pts, true);
-    g.lineStyle(2, hex(PALETTE.linea), 0.8).strokePoints(pts, true);
+    g.lineStyle(r > 8 ? 2 : 1.5, hex(PALETTE.linea), 0.8).strokePoints(pts, true);
   }
 
   /** Retrato circular: textura 'retrato' si existe; si no, cara con gorra azul. */
-  crearRetrato(cx, cy) {
-    const r = RETRATO / 2;
+  crearRetrato(cx, cy, tam) {
+    const r = tam / 2;
     const c = this.add.container(cx, cy);
     if (this.textures.exists('retrato')) {
-      const img = this.add.image(0, 0, 'retrato').setDisplaySize(RETRATO, RETRATO);
+      const img = this.add.image(0, 0, 'retrato').setDisplaySize(tam, tam);
       // La máscara geométrica usa coordenadas absolutas (el panel vive en MARGEN, MARGEN).
       const mask = this.make.graphics({ x: MARGEN + cx, y: MARGEN + cy, add: false });
       mask.fillStyle(0xffffff).fillCircle(0, 0, r);
       img.setMask(mask.createGeometryMask());
       const ring = this.add.graphics().lineStyle(3, hex(PALETTE.celeste), 1).strokeCircle(0, 0, r);
       c.add([img, ring]);
+      this.retratoMask = mask;
       return c;
     }
+    const k = tam / 44; // proporciones dibujadas para 44 px
     const g = this.add.graphics();
     g.fillStyle(hex(PALETTE.celeste), 1).fillCircle(0, 0, r);           // fondo
-    g.fillStyle(hex(PALETTE.piel), 1).fillCircle(0, 4, r * 0.62);       // cara
+    g.fillStyle(hex(PALETTE.piel), 1).fillCircle(0, 4 * k, r * 0.62);   // cara
     g.fillStyle(hex(PALETTE.azulGorra), 1);                               // gorra
-    g.slice(0, 2, r * 0.68, Phaser.Math.DegToRad(190), Phaser.Math.DegToRad(350), false).fillPath();
-    g.fillRoundedRect(-r * 0.75, -3, r * 1.5, 6, 3);                      // visera
-    g.fillStyle(hex(PALETTE.azulGorraOscuro), 1).fillRoundedRect(-r * 0.75, 1, r * 1.5, 3, 1.5);
-    g.fillStyle(hex(PALETTE.linea), 1).fillCircle(-5, 8, 2).fillCircle(5, 8, 2); // ojos
+    g.slice(0, 2 * k, r * 0.68, Phaser.Math.DegToRad(190), Phaser.Math.DegToRad(350), false).fillPath();
+    g.fillRoundedRect(-r * 0.75, -3 * k, r * 1.5, 6 * k, 3 * k);          // visera
+    g.fillStyle(hex(PALETTE.azulGorraOscuro), 1).fillRoundedRect(-r * 0.75, 1 * k, r * 1.5, 3 * k, 1.5 * k);
+    g.fillStyle(hex(PALETTE.linea), 1).fillCircle(-5 * k, 8 * k, 2 * k).fillCircle(5 * k, 8 * k, 2 * k); // ojos
     g.lineStyle(2, hex(PALETTE.linea), 1).beginPath();
-    g.arc(0, 11, 5, Phaser.Math.DegToRad(20), Phaser.Math.DegToRad(160), false).strokePath(); // sonrisa
+    g.arc(0, 11 * k, 5 * k, Phaser.Math.DegToRad(20), Phaser.Math.DegToRad(160), false).strokePath(); // sonrisa
     g.lineStyle(3, hex(PALETTE.blanco), 1).strokeCircle(0, 0, r);       // aro
     c.add(g);
     return c;
   }
 
-  // ---------- paneles ----------
+  // ---------- panel de jugador ----------
 
-  crearPanelJugador() {
-    const h = 68;
+  /** Crea (o recrea, al cambiar de orientación) el panel de retrato + puntos + estrellas. */
+  crearPanelJugador(compacto) {
+    if (this.jugador) {
+      this.tweens.killTweensOf(this.puntosText);
+      this.jugador.destroy();
+      this.retratoMask?.destroy();
+      this.retratoMask = null;
+    }
+    const cfg = compacto ? JUGADOR.vertical : JUGADOR.horizontal;
+    const pad = compacto ? 6 : 12;
+    const { h, retrato: RETRATO, star: STAR_R } = cfg;
+    this.jugadorCompacto = compacto;
+    this.jugadorW = cfg.w; this.jugadorH = h;
     this.jugador = this.add.container(MARGEN, MARGEN).setDepth(DEPTH_PANEL);
-    const bg = this.panel(this.add.graphics(), PANEL_W, h);
-    const retrato = this.crearRetrato(12 + RETRATO / 2, h / 2);
-    this.puntosText = this.texto(12 + RETRATO + 12, 12, 'Puntos: 0', 18);
+    const bg = this.panel(this.add.graphics(), cfg.w, h);
+    const retrato = this.crearRetrato(pad + RETRATO / 2, h / 2, RETRATO);
+    const tx = pad + RETRATO + (compacto ? 8 : 12);
+    this.puntosText = this.texto(tx, compacto ? 7 : 12, `Puntos: ${this.estado.puntos ?? 0}`, cfg.puntos);
 
     this.estrellas = [];
+    this.starR = STAR_R;
     const usarTex = this.textures.exists('star_on') && this.textures.exists('star_off');
     for (let i = 0; i < 3; i++) {
-      const cx = 12 + RETRATO + 12 + STAR_R + i * (STAR_R * 2 + 6);
-      const cy = h - 12 - STAR_R;
+      const cx = tx + STAR_R + i * (STAR_R * 2 + (compacto ? 5 : 6));
+      const cy = h - (compacto ? 9 : 12) - STAR_R;
       let obj;
       if (usarTex) {
         obj = this.add.image(cx, cy, 'star_off').setDisplaySize(STAR_R * 2 + 2, STAR_R * 2 + 2);
@@ -149,11 +204,13 @@ export class HUDScene extends Phaser.Scene {
       this.estrellas.push(obj);
     }
     this.jugador.add([bg, retrato, this.puntosText, ...this.estrellas]);
-    this.jugadorH = h;
+    this.renderEstrellas();
   }
 
+  // ---------- misiones ----------
+
   crearPanelMisiones() {
-    this.misionesPanel = this.add.container(MARGEN, MARGEN + this.jugadorH + 8).setDepth(DEPTH_PANEL);
+    this.misionesPanel = this.add.container(MARGEN, MARGEN + this.jugadorH + 8).setDepth(DEPTH_PANEL + 1);
     this.misionesBg = this.add.graphics();
     this.misionesTitulo = this.texto(12, 8, 'Misiones:', 16, { color: PALETTE.celeste });
     this.misionesPanel.add([this.misionesBg, this.misionesTitulo]);
@@ -161,21 +218,41 @@ export class HUDScene extends Phaser.Scene {
     this.renderMisiones();
   }
 
+  /** Vertical: "Misión: <activa> n/m" en una línea + botón "?" que despliega la lista. */
+  crearMisionLinea() {
+    this.misionLinea = this.add.container(MARGEN, 0).setDepth(DEPTH_PANEL).setVisible(false);
+    this.misionLineaBg = this.add.graphics();
+    this.misionLineaText = this.texto(10, 0, '', 12).setOrigin(0, 0.5);
+    this.misionBtn = this.add.container(0, 0);
+    const bg = this.add.graphics();
+    bg.fillStyle(hex(PALETTE.celeste), 1).fillCircle(0, 0, 12);
+    bg.lineStyle(2, hex(PALETTE.blanco), 1).strokeCircle(0, 0, 12);
+    const q = this.texto(0, 0, '?', 15, { color: PALETTE.marino }).setOrigin(0.5);
+    this.misionBtn.add([bg, q]).setSize(...touchSize(28, 28)).setInteractive({ useHandCursor: true })
+      .on('pointerdown', (p, lx, ly, ev) => { ev?.stopPropagation?.(); this.desplegarMisiones(); });
+    this.misionLinea.add([this.misionLineaBg, this.misionLineaText, this.misionBtn]);
+    this.misionLineaH = 28;
+  }
+
+  misionesW() { return Layout.isPortrait(this) ? Math.min(PANEL_W, this.scale.width - MARGEN * 2) : PANEL_W; }
+
   renderMisiones() {
     const lista = Array.isArray(this.estado.misiones) ? this.estado.misiones : [];
     const filaH = 26, top = 34;
+    const w = this.misionesW();
     const h = top + Math.max(1, lista.length) * filaH + 4;
-    this.panel(this.misionesBg, PANEL_W, h);
+    this.panel(this.misionesBg, w, h);
 
     // Crear o reciclar filas
     while (this.misionesItems.length < lista.length) {
       const check = this.add.graphics();
       const texto = this.texto(0, 0, '', 15).setOrigin(0, 0.5);
-      const progreso = this.texto(PANEL_W - 12, 0, '', 14, { color: PALETTE.celeste }).setOrigin(1, 0.5);
+      const progreso = this.texto(w - 12, 0, '', 14, { color: PALETTE.celeste }).setOrigin(1, 0.5);
       this.misionesPanel.add([check, texto, progreso]);
       this.misionesItems.push({ check, texto, progreso });
     }
     let activaVista = false;
+    let activaM = null;
     this.misionesItems.forEach((it, i) => {
       const m = lista[i];
       const visible = !!m;
@@ -183,7 +260,7 @@ export class HUDScene extends Phaser.Scene {
       if (!m) return;
       const y = top + i * filaH + filaH / 2;
       const activa = !m.hecho && !activaVista;
-      if (activa) activaVista = true;
+      if (activa) { activaVista = true; activaM = m; }
       const alpha = m.hecho || activa ? 1 : 0.6;
 
       // Casilla 16×16
@@ -201,116 +278,252 @@ export class HUDScene extends Phaser.Scene {
       }
       it.texto.setPosition(bx + s + 8, y).setText(m.texto)
         .setColor(m.hecho ? PALETTE.verde : PALETTE.blanco).setAlpha(alpha);
-      it.progreso.setPosition(PANEL_W - 12, y).setText(m.hecho ? '' : (m.progreso || '')).setAlpha(alpha);
+      it.progreso.setPosition(w - 12, y).setText(m.hecho ? '' : (m.progreso || '')).setAlpha(alpha);
     });
     this.misionesH = h;
+
+    // Línea compacta (vertical)
+    if (this.misionLineaText) {
+      const todas = lista.length > 0 && lista.every((m) => m.hecho);
+      let linea = '';
+      if (activaM) linea = `Misión: ${activaM.texto}${activaM.progreso ? ' ' + activaM.progreso : ''}`;
+      else if (todas) linea = 'Misiones completas';
+      this.misionLineaText.setText(linea);
+      this.renderMisionLinea();
+    }
   }
 
-  crearPanelBarrio() {
-    const h = 74;
-    this.barrioW = PANEL_W + (esModoTactil(this.sys.game) ? OFFSET_PAUSA_TACTIL : 0);
-    this.barrio = this.add.container(this.scale.width - MARGEN - this.barrioW, MARGEN).setDepth(DEPTH_PANEL);
-    const bg = this.panel(this.add.graphics(), PANEL_W, h);
-    const titulo = this.texto(12, 8, 'Barrio protegido', 15, { color: PALETTE.celeste });
-    this.pctText = this.texto(PANEL_W - 12, 8, '0%', 16).setOrigin(1, 0);
-
-    // Barra
-    this.barraX = 12; this.barraY = 32; this.barraW = PANEL_W - 24; this.barraH = 14;
-    const fondo = this.add.graphics();
-    fondo.fillStyle(hex(PALETTE.linea), 0.9).fillRoundedRect(this.barraX, this.barraY, this.barraW, this.barraH, 7);
-    this.barraFill = this.add.graphics();
-    this.barraValor = this.estado.progreso || 0; // valor animado 0..1
-    this.dibujarBarra(this.barraValor);
-
-    this.zonaText = this.texto(12, h - 21, '', 13, { bold: false, color: PALETTE.celeste }).setOrigin(0, 0);
-    this.tiempoText = this.texto(PANEL_W - 12, h - 21, '00:00', 13, { color: PALETTE.blanco }).setOrigin(1, 0);
-    this.barrio.add([bg, titulo, this.pctText, fondo, this.barraFill, this.zonaText, this.tiempoText]);
-    this.barrioH = h;
+  renderMisionLinea() {
+    if (!this.viva()) return;
+    const portrait = Layout.isPortrait(this);
+    const mini = HUDScene.rectMinimapa(this);
+    // No invadir la columna del minimapa (arranca en mini.x).
+    const maxW = Math.max(120, mini.x - 8 - MARGEN);
+    const hayTexto = this.misionLineaText.text.length > 0;
+    this.misionLineaText.setWordWrapWidth(maxW - 10 - 36, true);
+    const h = Math.max(28, this.misionLineaText.height + 10);
+    const lw = Math.min(maxW, 10 + this.misionLineaText.width + 36);
+    this.misionLineaText.setY(h / 2);
+    this.misionLineaBg.clear();
+    this.misionLineaBg.fillStyle(hex(PALETTE.marino), 0.88).fillRoundedRect(0, 0, lw, h, Math.min(14, h / 2));
+    this.misionLineaBg.lineStyle(2, hex(PALETTE.celeste), 1).strokeRoundedRect(0, 0, lw, h, Math.min(14, h / 2));
+    this.misionBtn.setPosition(lw - 16, h / 2);
+    this.misionLinea.setVisible(portrait && hayTexto);
+    this.misionLineaH = h;
   }
 
-  dibujarBarra(v) {
-    const g = this.barraFill.clear();
-    const w = Math.round(this.barraW * Phaser.Math.Clamp(v, 0, 1));
-    if (w < 4) return;
-    const r = Math.min(7, w / 2);
-    g.fillStyle(hex(PALETTE.verde), 1).fillRoundedRect(this.barraX, this.barraY, w, this.barraH, r);
-    // Brillo superior
-    g.fillStyle(hex(PALETTE.blanco), 0.35).fillRoundedRect(this.barraX + 2, this.barraY + 2, Math.max(0, w - 4), this.barraH * 0.35, 3);
+  /** Vertical: muestra la lista completa 3 s (bajo la línea de misión). */
+  desplegarMisiones() {
+    if (!Layout.isPortrait(this)) return;
+    if (this.misionesTimer) this.misionesTimer.remove();
+    this.misionesDesplegadas = true;
+    this.tweens.killTweensOf(this.misionesPanel);
+    this.misionesPanel.setVisible(true).setAlpha(0);
+    this.tweens.add({ targets: this.misionesPanel, alpha: 1, duration: 150 });
+    this.misionesTimer = this.time.delayedCall(MISIONES_DESPLEGADAS_MS, () => this.plegarMisiones());
   }
 
-  /** Panel "Riesgo de epidemia": mismo patrón visual que crearPanelBarrio(), en rojo/amarillo. */
-  crearPanelEpidemia() {
-    const h = 74;
-    this.epidemiaW = PANEL_W;
-    this.epidemia = this.add.container(0, 0).setDepth(DEPTH_PANEL);
-    const bg = this.panel(this.add.graphics(), PANEL_W, h);
-    const titulo = this.texto(12, 8, 'Riesgo de epidemia', 15, { color: ROJO_EPIDEMIA });
-    this.epiPctText = this.texto(PANEL_W - 12, 8, '0%', 16).setOrigin(1, 0);
-
-    this.epiBarraX = 12; this.epiBarraY = 32; this.epiBarraW = PANEL_W - 24; this.epiBarraH = 14;
-    const fondo = this.add.graphics();
-    fondo.fillStyle(hex(PALETTE.linea), 0.9).fillRoundedRect(this.epiBarraX, this.epiBarraY, this.epiBarraW, this.epiBarraH, 7);
-    this.epiBarraFill = this.add.graphics();
-    this.epiValor = (this.estado.epidemia || 0) / 100; // valor animado 0..1
-    this.dibujarBarraEpidemia(this.epiValor);
-
-    this.epiAviso = this.texto(12, h - 21, '', 13, { bold: true, color: PALETTE.amarillo }).setOrigin(0, 0);
-    this.epidemia.add([bg, titulo, this.epiPctText, fondo, this.epiBarraFill, this.epiAviso]);
-    this.epidemiaH = h;
+  plegarMisiones() {
+    this.misionesDesplegadas = false;
+    if (!Layout.isPortrait(this)) return;
+    this.tweens.killTweensOf(this.misionesPanel);
+    this.tweens.add({
+      targets: this.misionesPanel, alpha: 0, duration: 200,
+      onComplete: () => { if (!this.misionesDesplegadas) this.misionesPanel.setVisible(false); },
+    });
   }
 
-  dibujarBarraEpidemia(v) {
-    const g = this.epiBarraFill.clear();
-    const w = Math.round(this.epiBarraW * Phaser.Math.Clamp(v, 0, 1));
-    if (w < 4) return;
-    const r = Math.min(7, w / 2);
-    const color = v >= 0.85 ? PALETTE.tejaOscura : v >= 0.6 ? PALETTE.teja : PALETTE.amarillo;
-    g.fillStyle(hex(color), 1).fillRoundedRect(this.epiBarraX, this.epiBarraY, w, this.epiBarraH, r);
-    g.fillStyle(hex(PALETTE.blanco), 0.35).fillRoundedRect(this.epiBarraX + 2, this.epiBarraY + 2, Math.max(0, w - 4), this.epiBarraH * 0.35, 3);
-  }
+  // ---------- paneles de la derecha (horizontal): barrio protegido y riesgo de epidemia ----------
 
   /**
-   * Ubica el panel de epidemia bajo el panel "Barrio protegido"; si el ancho alcanza
-   * (horizontal, con sitio a la izquierda del panel del barrio), lo pone al lado.
+   * Panel con título, % a la derecha, barra y una línea de pie (zona + reloj para el barrio,
+   * aviso para la epidemia). Su ancho se fija en `dibujarPanelBarra` (se encoge en pantallas
+   * horizontales estrechas para caber lado a lado).
    */
-  posicionarEpidemia() {
-    const alLado = !Layout.isPortrait(this)
-      && (this.barrio.x - MARGEN - this.epidemiaW) >= (MARGEN + PANEL_W + 24);
-    if (alLado) {
-      this.epidemia.setPosition(this.barrio.x - MARGEN - this.epidemiaW, this.barrio.y);
-    } else {
-      this.epidemia.setPosition(this.barrio.x, this.barrio.y + this.barrioH + GAP_PANELES);
-    }
+  crearPanelBarra(titulo, colorTitulo, colorBarra, conReloj) {
+    const p = { c: this.add.container(0, 0).setDepth(DEPTH_PANEL), w: PANEL_W, h: 74, conReloj, colorBarra };
+    p.bg = this.add.graphics();
+    p.titulo = this.texto(12, 8, titulo, 15, { color: colorTitulo });
+    p.pct = this.texto(PANEL_W - 12, 8, '0%', 16).setOrigin(1, 0);
+    p.fondo = this.add.graphics();
+    p.fill = this.add.graphics();
+    p.pieIzq = this.texto(12, p.h - 21, '', 13, { bold: !conReloj, color: conReloj ? PALETTE.celeste : PALETTE.amarillo }).setOrigin(0, 0);
+    p.pieDer = this.texto(PANEL_W - 12, p.h - 21, conReloj ? '00:00' : '', 13, { color: PALETTE.blanco }).setOrigin(1, 0);
+    p.c.add([p.bg, p.titulo, p.pct, p.fondo, p.fill, p.pieIzq, p.pieDer]);
+    this.dibujarPanelBarra(p, PANEL_W);
+    return p;
   }
 
-  /** Pulso continuo (alpha en loop) cuando el riesgo supera UMBRAL_RIESGO. */
-  manejarPulsoEpidemia(valor100) {
-    const riesgo = valor100 >= UMBRAL_RIESGO;
-    if (riesgo && !this.epiPulso) {
-      this.epiPulso = this.tweens.add({
-        targets: this.epidemia, alpha: 0.55, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
-      });
-    } else if (!riesgo && this.epiPulso) {
-      this.epiPulso.stop();
-      this.epiPulso = null;
-      this.epidemia.setAlpha(1);
-    }
+  dibujarPanelBarra(p, w) {
+    p.w = w;
+    p.barraX = 12; p.barraY = 32; p.barraW = w - 24; p.barraH = 14;
+    this.panel(p.bg, w, p.h);
+    p.pct.setX(w - 12);
+    p.pieDer.setX(w - 12);
+    p.fondo.clear().fillStyle(hex(PALETTE.linea), 0.9).fillRoundedRect(p.barraX, p.barraY, p.barraW, p.barraH, 7);
   }
+
+  /** Rellena la barra grande de un panel de la derecha (color fijo o por nivel de riesgo). */
+  rellenarPanelBarra(p, v) {
+    const g = p.fill.clear();
+    const w = Math.round(p.barraW * Phaser.Math.Clamp(v, 0, 1));
+    if (w < 4) return;
+    const r = Math.min(7, w / 2);
+    const color = p.colorBarra || (v >= 0.85 ? PALETTE.tejaOscura : v >= 0.6 ? PALETTE.teja : PALETTE.amarillo);
+    g.fillStyle(hex(color), 1).fillRoundedRect(p.barraX, p.barraY, w, p.barraH, r);
+    g.fillStyle(hex(PALETTE.blanco), 0.35).fillRoundedRect(p.barraX + 2, p.barraY + 2, Math.max(0, w - 4), p.barraH * 0.35, 3);
+  }
+
+  // ---------- panel central (vertical): reloj + barras finas ----------
+
+  crearPanelCentro() {
+    this.centro = this.add.container(0, MARGEN).setDepth(DEPTH_PANEL).setVisible(false);
+    this.centroBg = this.add.graphics();
+    this.relojText = this.texto(0, 6, '00:00', 20, { align: 'center' }).setOrigin(0.5, 0);
+    this.finas = {
+      protegido: this.crearBarraFina('Barrio protegido', PALETTE.verde, null),
+      riesgo: this.crearBarraFina('Riesgo de epidemia', ROJO_EPIDEMIA, 'Riesgo epidemia'),
+    };
+    this.centro.add([this.centroBg, this.relojText, this.finas.protegido.c, this.finas.riesgo.c]);
+    this.centroW = 0; this.centroH = 0;
+  }
+
+  crearBarraFina(label, color, labelCorto) {
+    const c = this.add.container(0, 0);
+    const labelText = this.texto(0, 0, label, 12, { bold: false });
+    const pct = this.texto(0, 0, '0%', 12).setOrigin(1, 0.5);
+    const fondo = this.add.graphics();
+    const fill = this.add.graphics();
+    c.add([labelText, fondo, fill, pct]);
+    return { c, labelText, pct, fondo, fill, color, label, labelCorto, w: 100, h: 6, y: 15 };
+  }
+
+  /** Barra fina: etiqueta arriba; debajo la barra con el % a su derecha. */
+  dibujarBarraFina(b, v) {
+    const val = Phaser.Math.Clamp(Number(v) || 0, 0, 1);
+    const pctW = 32;
+    const bw = Math.max(20, b.w - pctW - 4);
+    b.fondo.clear().fillStyle(hex(PALETTE.linea), 0.9).fillRoundedRect(0, b.y, bw, b.h, b.h / 2);
+    b.fill.clear();
+    const w = Math.round(bw * val);
+    if (w >= 3) {
+      b.fill.fillStyle(hex(b.color), 1).fillRoundedRect(0, b.y, w, b.h, Math.min(b.h / 2, w / 2));
+      b.fill.fillStyle(hex(PALETTE.blanco), 0.3).fillRoundedRect(1, b.y + 1, Math.max(0, w - 2), b.h * 0.4, 1.5);
+    }
+    b.pct.setPosition(b.w, b.y + b.h / 2).setText(`${Math.round(val * 100)}%`);
+  }
+
+  // ---------- dato educativo ----------
 
   crearDato() {
-    const w = Math.min(520, this.scale.width - 2 * MARGEN);
     this.dato = this.add.container(this.scale.width / 2, this.scale.height - MARGEN).setDepth(DEPTH_DATO).setVisible(false).setAlpha(0);
     this.datoBg = this.add.graphics();
-    this.datoText = this.texto(0, 0, '', 14, { align: 'center', bold: false, wrap: w - 40 }).setOrigin(0.5, 1);
+    this.datoText = this.texto(0, 0, '', 14, { align: 'center', bold: false, wrap: 480 }).setOrigin(0.5, 1);
     this.dato.add([this.datoBg, this.datoText]);
-    this.datoW = w;
+    this.datoW = 520;
     this.datoTimer = null;
+  }
+
+  /** Ancho y línea base (y) del dato educativo: sobre los botones táctiles, sin tocar el joystick. */
+  datoGeom(w, h) {
+    const portrait = Layout.isPortrait(this);
+    if (this.tactil && portrait) return { w: w - 2 * MARGEN, y: h - 270 };
+    if (this.tactil) return { w: Math.min(520, w - 420), y: h - MARGEN };
+    return { w: Math.min(520, w - 2 * MARGEN), y: h - MARGEN };
+  }
+
+  // ---------- layout ----------
+
+  reposicionar(w, h) {
+    if (!this.viva()) return;
+    const portrait = Layout.isPortrait(this);
+    if (portrait !== this.jugadorCompacto) this.crearPanelJugador(portrait);
+    const mini = HUDScene.rectMinimapa(this);
+
+    if (portrait) {
+      // Derecha: libre para minimapa + pausa. Paneles grandes ocultos.
+      this.barrio.c.setVisible(false);
+      this.epidemia.c.setVisible(false);
+      this.registry.set(HUD_KEY_DERECHA_Y, MINIMAPA.top);
+
+      // Centro: entre el panel de jugador y la columna del minimapa.
+      const zx0 = MARGEN + this.jugadorW + 6;
+      const zx1 = mini.x - 6;
+      const centroW = Math.max(96, zx1 - zx0);
+      const pad = 6;
+      const relojH = this.relojText.height;
+      const filaH = 24;
+      const centroH = pad + relojH + 2 + filaH * 2 + 2;
+      this.panel(this.centroBg, centroW, centroH, 0.88);
+      this.centro.setPosition(Math.round(zx0), MARGEN).setVisible(true);
+      this.relojText.setPosition(centroW / 2, pad);
+      Object.values(this.finas).forEach((b, i) => {
+        b.w = centroW - 12;
+        b.c.setPosition(6, pad + relojH + 2 + i * filaH);
+        // Etiqueta corta si la larga no cabe (siempre ≥ 12 px).
+        b.labelText.setText(b.label);
+        if (b.labelCorto && b.labelText.width > b.w) b.labelText.setText(b.labelCorto);
+      });
+      this.dibujarBarraFina(this.finas.protegido, this.barraValor);
+      this.dibujarBarraFina(this.finas.riesgo, this.epiValor);
+      this.centroW = centroW; this.centroH = centroH;
+
+      // Misiones: una línea bajo los paneles de arriba; lista completa solo desplegada.
+      this.renderMisiones();
+      const lineaY = MARGEN + Math.max(this.jugadorH, centroH) + 6;
+      this.misionLinea.setPosition(MARGEN, lineaY);
+      this.misionesPanel.setPosition(MARGEN, lineaY + this.misionLineaH + 6);
+      if (!this.misionesDesplegadas) this.misionesPanel.setVisible(false).setAlpha(0);
+    } else {
+      this.centro.setVisible(false);
+      this.misionLinea.setVisible(false);
+      this.tweens.killTweensOf(this.misionesPanel);
+      this.misionesDesplegadas = false;
+      if (this.misionesTimer) { this.misionesTimer.remove(); this.misionesTimer = null; }
+      this.renderMisiones();
+      this.misionesPanel.setPosition(MARGEN, MARGEN + this.jugadorH + 8).setVisible(true).setAlpha(1);
+
+      // Derecha: barrio (+ offset para PAUSA en táctil) y epidemia al lado si cabe; si el ancho
+      // no alcanza con 250 px, los dos paneles se encogen hasta PANEL_MIN_W antes de apilarse.
+      const offset = this.tactil ? OFFSET_PAUSA_TACTIL : 0;
+      const derecha = w - MARGEN - offset;
+      const libre = derecha - (MARGEN + this.jugadorW + 24);
+      let pw = PANEL_W;
+      let alLado = libre >= 2 * PANEL_W + MARGEN;
+      if (!alLado && (libre - MARGEN) / 2 >= PANEL_MIN_W) { pw = Math.floor((libre - MARGEN) / 2); alLado = true; }
+      if (pw !== this.barrio.w) { this.dibujarPanelBarra(this.barrio, pw); this.dibujarPanelBarra(this.epidemia, pw); }
+      this.rellenarPanelBarra(this.barrio, this.barraValor);
+      this.rellenarPanelBarra(this.epidemia, this.epiValor);
+      this.barrio.c.setPosition(derecha - pw, MARGEN).setVisible(true);
+      if (alLado) {
+        this.epidemia.c.setPosition(derecha - pw - MARGEN - pw, MARGEN).setVisible(true);
+      } else {
+        this.epidemia.c.setPosition(derecha - pw, MARGEN + this.barrio.h + GAP_PANELES).setVisible(true);
+      }
+      const derechaY = this.epidemia.c.y + this.epidemia.h + 10;
+      this.registry.set(HUD_KEY_DERECHA_Y, derechaY);
+      this.registry.set(HUD_KEY_LIBRE, {
+        x0: MARGEN + this.jugadorW, x1: this.epidemia.c.x, y1: MARGEN + this.barrio.h,
+      });
+    }
+
+    // Dato educativo
+    const g = this.datoGeom(w, h);
+    this.datoW = g.w;
+    this.datoText.setWordWrapWidth(g.w - 40, true);
+    this.dato.setPosition(w / 2, g.y);
+    if (this.dato.visible) this.dibujarDato();
   }
 
   // ---------- actualización ----------
 
+  /** ¿La escena sigue viva y con sus objetos? (evita usar Text destruidos tras un restart). */
+  viva() {
+    return this.sys && this.sys.isActive() && this.misionLineaText && this.misionLineaText.active;
+  }
+
   aplicar(key, value) {
-    if (!HUD_KEYS.includes(key)) return;
+    if (!HUD_KEYS.includes(key) || !this.viva()) return;
     const prev = this.estado[key];
     this.estado[key] = value;
     switch (key) {
@@ -325,12 +538,34 @@ export class HUDScene extends Phaser.Scene {
           this.animarBarra(this.estado.limpios / this.estado.total);
         }
         break;
-      case 'zona': this.zonaText.setText(value || ''); break;
-      case 'tiempo': this.tiempoText.setText(HUDScene.formatoTiempo(value)); break;
+      case 'zona': this.barrio.pieIzq.setText(value || ''); break;
+      case 'tiempo': this.setReloj(value); break;
       case 'misiones': this.renderMisiones(); break;
       case 'epidemia': this.animarBarraEpidemia(value); break;
       default: break;
     }
+  }
+
+  setReloj(seg) {
+    const t = HUDScene.formatoTiempo(seg);
+    this.barrio.pieDer.setText(t);
+    this.relojText.setText(t);
+  }
+
+  /** Aplica el valor 0..1 del barrio a ambas vistas (panel grande y barra fina). */
+  pintarBarrio(v) {
+    this.barraValor = v;
+    this.rellenarPanelBarra(this.barrio, v);
+    this.barrio.pct.setText(`${Math.round(v * 100)}%`);
+    this.dibujarBarraFina(this.finas.protegido, v);
+  }
+
+  /** Aplica el valor 0..1 de riesgo a ambas vistas. */
+  pintarEpidemia(v) {
+    this.epiValor = v;
+    this.rellenarPanelBarra(this.epidemia, v);
+    this.epidemia.pct.setText(`${Math.round(v * 100)}%`);
+    this.dibujarBarraFina(this.finas.riesgo, v);
   }
 
   refrescarTodo() {
@@ -338,38 +573,41 @@ export class HUDScene extends Phaser.Scene {
     this.renderEstrellas();
     this.renderMisiones();
     const p = this.estado.progreso ?? (this.estado.total ? this.estado.limpios / this.estado.total : 0);
-    this.barraValor = p;
-    this.dibujarBarra(p);
-    this.pctText.setText(`${Math.round(p * 100)}%`);
-    this.zonaText.setText(this.estado.zona || '');
-    this.tiempoText.setText(HUDScene.formatoTiempo(this.estado.tiempo));
+    this.pintarBarrio(p);
+    this.barrio.pieIzq.setText(this.estado.zona || '');
+    this.setReloj(this.estado.tiempo);
 
     const e = Phaser.Math.Clamp(Number(this.estado.epidemia) || 0, 0, 100);
-    this.epiValor = e / 100;
-    this.dibujarBarraEpidemia(this.epiValor);
-    this.epiPctText.setText(`${Math.round(e)}%`);
-    this.epiAviso.setText(e >= UMBRAL_RIESGO ? '¡El barrio está en riesgo!' : '');
+    this.pintarEpidemia(e / 100);
+    this.epidemia.pieIzq.setText(e >= UMBRAL_RIESGO ? '¡El barrio está en riesgo!' : '');
     this.manejarPulsoEpidemia(e);
+  }
+
+  /** Pulso continuo (alpha en loop) cuando el riesgo supera UMBRAL_RIESGO. */
+  manejarPulsoEpidemia(valor100) {
+    const riesgo = valor100 >= UMBRAL_RIESGO;
+    const targets = [this.epidemia.c, this.finas.riesgo.c];
+    if (riesgo && !this.epiPulso) {
+      this.epiPulso = this.tweens.add({
+        targets, alpha: 0.55, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+      });
+    } else if (!riesgo && this.epiPulso) {
+      this.epiPulso.stop();
+      this.epiPulso = null;
+      targets.forEach((t) => t.setAlpha(1));
+    }
   }
 
   animarBarraEpidemia(objetivo) {
     const dest = Phaser.Math.Clamp(Number(objetivo) || 0, 0, 100);
     this.manejarPulsoEpidemia(dest);
-    this.epiAviso.setText(dest >= UMBRAL_RIESGO ? '¡El barrio está en riesgo!' : '');
+    this.epidemia.pieIzq.setText(dest >= UMBRAL_RIESGO ? '¡El barrio está en riesgo!' : '');
     if (this.epiBarraTween) this.epiBarraTween.stop();
     const from = { v: this.epiValor * 100 };
     this.epiBarraTween = this.tweens.add({
       targets: from, v: dest, duration: TWEEN_BARRA_MS, ease: 'Sine.easeOut',
-      onUpdate: () => {
-        this.epiValor = from.v / 100;
-        this.dibujarBarraEpidemia(this.epiValor);
-        this.epiPctText.setText(`${Math.round(from.v)}%`);
-      },
-      onComplete: () => {
-        this.epiValor = dest / 100;
-        this.dibujarBarraEpidemia(this.epiValor);
-        this.epiPctText.setText(`${Math.round(dest)}%`);
-      },
+      onUpdate: () => this.pintarEpidemia(from.v / 100),
+      onComplete: () => this.pintarEpidemia(dest / 100),
     });
   }
 
@@ -381,7 +619,7 @@ export class HUDScene extends Phaser.Scene {
         s.setTexture(on ? 'star_on' : 'star_off');
       } else {
         s.clear();
-        this.dibujarEstrella(s, s.cx, s.cy, STAR_R, on ? PALETTE.amarillo : PALETTE.grisClaro);
+        this.dibujarEstrella(s, s.cx, s.cy, this.starR, on ? PALETTE.amarillo : PALETTE.grisClaro);
       }
     });
   }
@@ -392,16 +630,10 @@ export class HUDScene extends Phaser.Scene {
     const from = { v: this.barraValor };
     this.barraTween = this.tweens.add({
       targets: from, v: dest, duration: TWEEN_BARRA_MS, ease: 'Sine.easeOut',
-      onUpdate: () => {
-        this.barraValor = from.v;
-        this.dibujarBarra(from.v);
-        this.pctText.setText(`${Math.round(from.v * 100)}%`);
-      },
+      onUpdate: () => this.pintarBarrio(from.v),
       onComplete: () => {
-        this.barraValor = dest;
-        this.dibujarBarra(dest);
-        this.pctText.setText(`${Math.round(dest * 100)}%`);
-        if (dest >= 1) this.pulso(this.pctText, 1.3);
+        this.pintarBarrio(dest);
+        if (dest >= 1) this.pulso(Layout.isPortrait(this) ? this.finas.protegido.pct : this.barrio.pct, 1.3);
       },
     });
   }
@@ -422,8 +654,18 @@ export class HUDScene extends Phaser.Scene {
     });
   }
 
+  /** Redibuja el fondo del dato según el texto y el ancho actuales. */
+  dibujarDato() {
+    const w = Math.min(this.datoW, this.datoText.width + 40);
+    const h = this.datoText.height + 20;
+    this.datoBg.clear();
+    this.datoBg.fillStyle(hex(PALETTE.marino), 0.92).fillRoundedRect(-w / 2, -h, w, h, RADIO);
+    this.datoBg.lineStyle(2, hex(PALETTE.amarillo), 1).strokeRoundedRect(-w / 2, -h, w, h, RADIO);
+    this.datoText.setY(-10);
+  }
+
   /**
-   * Dato educativo breve abajo al centro.
+   * Dato educativo breve (abajo al centro; en táctil, por encima de los botones).
    * @param {string} texto
    * @param {number} ms duración visible (por defecto 4000)
    */
@@ -432,31 +674,22 @@ export class HUDScene extends Phaser.Scene {
     if (this.datoTimer) { this.datoTimer.remove(); this.datoTimer = null; }
     this.tweens.killTweensOf(this.dato);
 
-    this.datoText.setText(texto || '');
-    const w = Math.min(this.datoW, this.datoText.width + 40);
-    const h = this.datoText.height + 20;
-    this.datoBg.clear();
-    this.datoBg.fillStyle(hex(PALETTE.marino), 0.92).fillRoundedRect(-w / 2, -h, w, h, RADIO);
-    this.datoBg.lineStyle(2, hex(PALETTE.amarillo), 1).strokeRoundedRect(-w / 2, -h, w, h, RADIO);
-    this.datoText.setY(-10);
+    this.datoText.setWordWrapWidth(this.datoW - 40, true).setText(texto || '');
+    this.dibujarDato();
 
-    this.dato.setVisible(true).setY(this.scale.height - MARGEN + 16);
-    this.tweens.add({ targets: this.dato, alpha: 1, y: this.scale.height - MARGEN, duration: 200, ease: 'Sine.easeOut' });
+    const y = this.datoGeom(this.scale.width, this.scale.height).y;
+    this.dato.setVisible(true).setY(y + 16);
+    this.tweens.add({ targets: this.dato, alpha: 1, y, duration: 200, ease: 'Sine.easeOut' });
     this.datoTimer = this.time.delayedCall(ms, () => this.ocultarDato());
   }
 
   ocultarDato() {
     if (!this.dato || !this.dato.visible) return;
+    const y = this.datoGeom(this.scale.width, this.scale.height).y;
     this.tweens.add({
-      targets: this.dato, alpha: 0, y: this.scale.height - MARGEN + 16, duration: 200, ease: 'Sine.easeIn',
+      targets: this.dato, alpha: 0, y: y + 16, duration: 200, ease: 'Sine.easeIn',
       onComplete: () => this.dato.setVisible(false),
     });
-  }
-
-  reposicionar(width, height) {
-    this.barrio.setX(width - MARGEN - this.barrioW);
-    this.posicionarEpidemia();
-    this.dato.setPosition(width / 2, height - MARGEN);
   }
 
   static formatoTiempo(seg) {

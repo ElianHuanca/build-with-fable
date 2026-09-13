@@ -3,20 +3,36 @@ import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
 import { FACTS } from '../data/facts.js';
 import { AudioManager } from './AudioManager.js';
+import { Layout } from './Layout.js';
 
 const FONT = 'Arial, sans-serif';
 const DEPTH = 10000;
 const DEPTH_MODAL = 20000;
 const ROJO = 0xe74c3c;
 
-/** Geometría de los botones (coordenadas desde los bordes derecho/inferior de la escena). */
+/**
+ * Geometría de los botones: ancla de Layout.anchor + desplazamiento, por orientación.
+ * Todos cuelgan de la esquina inferior derecha (ACCIÓN grande; LUPA, CORRER y VEHÍCULO alrededor,
+ * sin solaparse entre sí ni con el joystick fijo de abajo-izquierda) salvo PAUSA (arriba-derecha).
+ * En horizontal CORRER va a la columna izquierda para no chocar con el minimapa (x ≥ w−160).
+ */
 const BTN = {
-  accion:   { dx: 100, dy: 100, r: 46 },
-  lupa:     { dx: 190, dy: 130, r: 30 },
-  correr:   { dx: 100, dy: 200, r: 30 },
-  vehiculo: { dx: 190, dy: 260, r: 30 },
+  vertical: {
+    accion:   { ancla: 'br', dx: -100, dy: -100, r: 46 },
+    lupa:     { ancla: 'br', dx: -190, dy: -130, r: 30 },
+    correr:   { ancla: 'br', dx: -100, dy: -200, r: 30 },
+    vehiculo: { ancla: 'br', dx: -170, dy: -60,  r: 30 },
+  },
+  horizontal: {
+    accion:   { ancla: 'br', dx: -100, dy: -100, r: 46 },
+    lupa:     { ancla: 'br', dx: -190, dy: -130, r: 30 },
+    correr:   { ancla: 'br', dx: -200, dy: -210, r: 30 },
+    vehiculo: { ancla: 'br', dx: -170, dy: -60,  r: 30 },
+  },
 };
-const PAUSA = { dx: 30, y: 30, r: 22 };
+const PAUSA = { ancla: 'tr', dx: -30, dy: 30, r: 22 };
+/** Radios de dibujo (iguales en ambas orientaciones). */
+const R = { accion: 46, lupa: 30, correr: 30, vehiculo: 30 };
 const LUPA_RECARGA_MS = 3000;
 const FLECHA_MS = 2000;
 const PRESS_SCALE = 0.92;
@@ -133,23 +149,21 @@ export class TouchControls {
     this.flechaObjetivo = null;
     this.energiaDibujada = -1;
 
-    const W = scene.scale.width, H = scene.scale.height;
-
     // ---- ACCIÓN ----
-    this.anillo = scene.add.circle(0, 0, BTN.accion.r, 0x000000, 0)
+    this.anillo = scene.add.circle(0, 0, R.accion, 0x000000, 0)
       .setStrokeStyle(4, hex(PALETTE.amarillo), 0.9).setScrollFactor(0).setDepth(DEPTH - 1).setVisible(false);
-    this.accion = crearBoton(scene, W - BTN.accion.dx, H - BTN.accion.dy, BTN.accion.r, PALETTE.amarillo, iconoGota);
+    this.accion = crearBoton(scene, 0, 0, R.accion, PALETTE.amarillo, iconoGota);
     this.accion.on('pointerdown', () => { if (this.estado === 'activo') this.onAccion?.(); });
     this.anilloTween = scene.tweens.add({
       targets: this.anillo, scale: 1.45, alpha: 0, duration: 900, repeat: -1, ease: 'Sine.easeOut', paused: true,
     });
 
     // ---- LUPA ----
-    this.lupa = crearBoton(scene, W - BTN.lupa.dx, H - BTN.lupa.dy, BTN.lupa.r, PALETTE.celeste, iconoLupa);
+    this.lupa = crearBoton(scene, 0, 0, R.lupa, PALETTE.celeste, iconoLupa);
     this.lupa.on('pointerdown', () => this.usarLupa());
 
     // ---- CORRER ----
-    this.correr = crearBoton(scene, W - BTN.correr.dx, H - BTN.correr.dy, BTN.correr.r, PALETTE.verde, iconoCorrer);
+    this.correr = crearBoton(scene, 0, 0, R.correr, PALETTE.verde, iconoCorrer);
     this.energiaArco = scene.add.graphics().setScrollFactor(0).setDepth(DEPTH + 1);
     this.correrPointerId = null;
     this.correr.on('pointerdown', (p) => { this.correrPointerId = p.id; scene.player?.setSprint(true); });
@@ -165,11 +179,11 @@ export class TouchControls {
     scene.input.on('pointerupoutside', soltarCorrer);
 
     // ---- VEHÍCULO ----
-    this.vehiculo = crearBoton(scene, W - BTN.vehiculo.dx, H - BTN.vehiculo.dy, BTN.vehiculo.r, PALETTE.azulGorra, iconoVehiculo);
+    this.vehiculo = crearBoton(scene, 0, 0, R.vehiculo, PALETTE.azulGorra, iconoVehiculo);
     this.vehiculo.on('pointerdown', () => this.onVehiculo?.());
 
     // ---- PAUSA ----
-    this.pausa = crearBoton(scene, W - PAUSA.dx, PAUSA.y, PAUSA.r, PALETTE.marino, iconoPausa);
+    this.pausa = crearBoton(scene, 0, 0, PAUSA.r, PALETTE.marino, iconoPausa);
     this.pausa.pintar(PALETTE.marino, 0.85, PALETTE.celeste, 3);
     this.pausa.on('pointerdown', () => this.onPausa?.());
 
@@ -185,22 +199,28 @@ export class TouchControls {
     this.todos = [this.accion, this.lupa, this.correr, this.vehiculo, this.pausa, this.anillo, this.energiaArco];
     this.setEstado('apagado');
 
-    this.onResize = (size) => this.reposicionar(size.width, size.height);
-    scene.scale.on('resize', this.onResize);
+    this.offResize = Layout.onResize(scene, () => this.reposicionar());
     scene.events.once('shutdown', () => {
-      scene.scale.off('resize', this.onResize);
+      this.offResize?.();
       scene.input.off('pointerup', soltarCorrer);
       scene.input.off('pointerupoutside', soltarCorrer);
     });
   }
 
-  reposicionar(W, H) {
-    this.accion.setPosition(W - BTN.accion.dx, H - BTN.accion.dy);
+  /** Geometría vigente según orientación (Layout.isPortrait). */
+  geometria() { return Layout.isPortrait(this.scene) ? BTN.vertical : BTN.horizontal; }
+
+  reposicionar() {
+    const scene = this.scene;
+    const g = this.geometria();
+    for (const k of Object.keys(g)) {
+      const { ancla, dx, dy } = g[k];
+      const { x, y } = Layout.anchor(scene, ancla, dx, dy);
+      this[k].setPosition(Math.round(x), Math.round(y));
+    }
     this.anillo.setPosition(this.accion.x, this.accion.y);
-    this.lupa.setPosition(W - BTN.lupa.dx, H - BTN.lupa.dy);
-    this.correr.setPosition(W - BTN.correr.dx, H - BTN.correr.dy);
-    this.vehiculo.setPosition(W - BTN.vehiculo.dx, H - BTN.vehiculo.dy);
-    this.pausa.setPosition(W - PAUSA.dx, PAUSA.y);
+    const p = Layout.anchor(scene, PAUSA.ancla, PAUSA.dx, PAUSA.dy);
+    this.pausa.setPosition(Math.round(p.x), Math.round(p.y));
     this.energiaDibujada = -1;
   }
 
@@ -287,7 +307,7 @@ export class TouchControls {
     if (Math.abs(v - this.energiaDibujada) < 0.01) return;
     this.energiaDibujada = v;
     const g = this.energiaArco.clear();
-    const r = BTN.correr.r + 6, x = this.correr.x, y = this.correr.y;
+    const r = R.correr + 6, x = this.correr.x, y = this.correr.y;
     g.lineStyle(5, hex(PALETTE.linea), 0.5).strokeCircle(x, y, r);
     if (v <= 0) return;
     const inicio = -Math.PI / 2;

@@ -1,5 +1,7 @@
 import { PALETTE, hex } from '../data/palette.js';
 import { Layout } from './Layout.js';
+import { HUD_KEY_LIBRE, MINIMAPA } from '../scenes/HUDScene.js';
+import { esModoTactil } from '../data/ui.js';
 
 const FONT = 'Arial, sans-serif';
 const DEPTH = 15000;
@@ -11,6 +13,16 @@ const DUR_IN = 220;
 const DUR_OUT = 200;
 const DESPLAZAMIENTO = 30; // px que baja el banner al aparecer (tween "desde arriba")
 const ROJO = 0xe74c3c;
+/** Vertical: el toast va debajo de la HUD (paneles de arriba + línea de misión + minimapa). */
+const TOP_VERTICAL = 160;
+/** Horizontal: ancho mínimo de la franja libre entre paneles para poner el toast arriba. */
+const MIN_FRANJA = 300;
+/** Horizontal sin datos de la HUD: bajo la fila de paneles (12 + 74 + respiro). */
+const TOP_HORIZONTAL_FALLBACK = 94;
+/** Ancho del panel de jugador/misiones (margen 12 + 250) en horizontal, para el fallback. */
+const LATERAL_HORIZONTAL = 262;
+/** Táctil horizontal: la columna de botones (CORRER en w−200, r 30 + arco) empieza en w−240. */
+const COLUMNA_BOTONES = 240;
 
 /**
  * Banner de alerta arriba de la pantalla (avisos de brote, más vistoso que hud.mostrarDato):
@@ -40,8 +52,16 @@ export class AlertToast {
     if (!this.usaTextura) this.dibujarIcono();
 
     this.onResize = (w) => this.reposicionar(w);
-    Layout.onResize(scene, this.onResize);
-    scene.events.once('shutdown', () => { if (this.timer) this.timer.remove(); });
+    this.offResize = Layout.onResize(scene, this.onResize);
+    // La HUD arranca después: reubicar cuando publique su franja libre.
+    // ('setdata' la primera vez que existe la clave, 'changedata' después.)
+    this.onRegistry = (parent, key) => { if (key === HUD_KEY_LIBRE) this.reposicionar(scene.scale.width); };
+    scene.registry.events.on('setdata', this.onRegistry);
+    scene.registry.events.on('changedata', this.onRegistry);
+    scene.events.once('shutdown', () => {
+      if (this.timer) this.timer.remove();
+      this.quitarRegistry();
+    });
   }
 
   /** Signo de exclamación en un círculo rojo, fallback cuando no hay textura 'alert'. */
@@ -55,12 +75,35 @@ export class AlertToast {
     g.fillCircle(0, r * 0.42, 3);
   }
 
+  /**
+   * Vertical: ancho casi completo, bajo la HUD (y 160) para no tapar la línea de misión ni el
+   * minimapa. Horizontal: arriba, centrado en la franja libre entre el panel de jugador y los
+   * paneles de la derecha (la publica la HUD en el registry); si la franja es estrecha
+   * (teléfono), bajo la fila de paneles, entre el panel de misiones y el minimapa.
+   */
   reposicionar(w) {
-    this.anchoW = typeof Layout.panelWidth === 'function'
-      ? Layout.panelWidth(this.scene, 520)
-      : Math.min(w - 32, 520);
-    this.topY = Layout.safe(this.scene).top;
-    this.container.setX(w / 2);
+    const portrait = Layout.isPortrait(this.scene);
+    let cx = w / 2;
+    if (portrait) {
+      this.anchoW = Layout.panelWidth(this.scene, 520);
+      this.topY = TOP_VERTICAL;
+    } else {
+      const libre = this.scene.registry.get(HUD_KEY_LIBRE);
+      const x0 = libre?.x0 ?? LATERAL_HORIZONTAL;
+      if (libre && libre.x1 - libre.x0 >= MIN_FRANJA) {
+        this.anchoW = Math.min(520, libre.x1 - libre.x0 - 24);
+        cx = (libre.x0 + libre.x1) / 2;
+        this.topY = Layout.safe(this.scene).top;
+      } else {
+        // Bajo la fila de paneles: entre misiones y el minimapa (o la columna de botones táctiles).
+        let x1 = w - MINIMAPA.margen - MINIMAPA.horizontal;
+        if (esModoTactil(this.scene.sys.game)) x1 = Math.min(x1, w - COLUMNA_BOTONES);
+        this.anchoW = Math.max(200, Math.min(520, x1 - x0 - 24));
+        cx = (x0 + x1) / 2;
+        this.topY = (libre?.y1 ?? TOP_HORIZONTAL_FALLBACK - 8) + 8;
+      }
+    }
+    this.container.setX(Math.round(cx));
     if (this.visible) {
       this.redibujar();
       this.container.setY(this.topY);
@@ -112,7 +155,14 @@ export class AlertToast {
     });
   }
 
+  quitarRegistry() {
+    this.scene.registry.events.off('setdata', this.onRegistry);
+    this.scene.registry.events.off('changedata', this.onRegistry);
+  }
+
   destroy() {
+    this.offResize?.();
+    this.quitarRegistry();
     if (this.timer) this.timer.remove();
     this.scene.tweens.killTweensOf(this.container);
     this.container.destroy();

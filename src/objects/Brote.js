@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
-import { playFumigation } from '../systems/FumigationFX.js';
+import { playFumigation, cancelFumigation, fumigationProgress } from '../systems/FumigationFX.js';
 
 // Tamaño del fallback dibujado (px) por nivel; crece con el brote.
 const SIZE_BY_NIVEL = { pequeno: 40, medio: 56, grande: 72 };
@@ -10,6 +10,8 @@ const DEPTH_OFFSET = 18;
 // Tiempo desde que aparece hasta pasar a 'medio', y desde 'medio' hasta 'grande'.
 const TIEMPO_A_MEDIO = 20000;
 const TIEMPO_A_GRANDE = 40000;
+// Un brote grande tarda más en fumigarse (GDD: ×1,5).
+const FACTOR_FUMIGACION = { pequeno: 1, medio: 1, grande: 1.5 };
 
 /**
  * Brote de mosquitos en el barrio (mockup, sección 1.3). Estados: activo → fumigando → fumigado.
@@ -30,9 +32,18 @@ export class Brote extends Phaser.Physics.Arcade.Sprite {
     scene.physics.add.existing(this, true); // cuerpo estático: no bloquea al jugador (sin collider)
     this.setDepth(y + DEPTH_OFFSET);
 
-    this.growTimer = scene.time.delayedCall(TIEMPO_A_MEDIO, () => this.crecer('medio'));
+    this.programarCrecimiento();
 
     this.on(Phaser.GameObjects.Events.DESTROY, () => this.detenerCrecimiento());
+  }
+
+  /** Programa (o reprograma, tras una fumigación cancelada) el paso al siguiente nivel. */
+  programarCrecimiento() {
+    this.detenerCrecimiento();
+    if (!this.scene || this.nivel === 'grande') return;
+    const ms = this.nivel === 'pequeno' ? TIEMPO_A_MEDIO : TIEMPO_A_GRANDE;
+    const siguiente = this.nivel === 'pequeno' ? 'medio' : 'grande';
+    this.growTimer = this.scene.time.delayedCall(ms, () => this.crecer(siguiente));
   }
 
   /** Devuelve la clave de textura para un nivel, creando un fallback si no existe. */
@@ -65,9 +76,7 @@ export class Brote extends Phaser.Physics.Arcade.Sprite {
     this.scene.events.emit('sfx', 'buzz');
     this.scene.tweens.add({ targets: this, scale: 1.4, duration: 180, yoyo: true, ease: 'Back.easeOut' });
     this.emit('crecio', this);
-    if (nivel === 'medio') {
-      this.growTimer = this.scene.time.delayedCall(TIEMPO_A_GRANDE, () => this.crecer('grande'));
-    }
+    this.programarCrecimiento();
   }
 
   /** Cancela el crecimiento automático (se llama al empezar a fumigar o al destruirse). */
@@ -76,26 +85,45 @@ export class Brote extends Phaser.Physics.Arcade.Sprite {
   }
 
   /**
-   * Fumigación con FumigationFX (~2.5 s a pie, ~1.5 s con `rapido` desde la camioneta).
-   * state: 'fumigando' → 'fumigado' (lo marca FumigationFX, que también emite 'fumigado').
-   * Reentrada bloqueada. Si la FX fallara, igual queda en 'fumigado' y emite el evento.
+   * Fumigación con FumigationFX (~2.5 s a pie, ~1.5 s con `rapido` desde la camioneta; ×1,5 si
+   * el brote es grande). state: 'fumigando' → 'fumigado' (lo marca FumigationFX, que también
+   * emite 'fumigado'). Reentrada bloqueada. Si la FX fallara, igual queda en 'fumigado' y emite
+   * el evento. Si se cancela con `cancelarFumigacion()` (el jugador soltó el botón), vuelve a
+   * 'activo', reanuda el crecimiento y resuelve `false`.
    * @param {{ rapido?: boolean }} [opts]
-   * @returns {Promise<Brote>}
+   * @returns {Promise<boolean>} true si quedó fumigado
    */
   fumigar(opts = {}) {
     if (this.fumigarPromise) return this.fumigarPromise;
-    if (this.state === 'fumigado') return Promise.resolve(this);
+    if (this.state === 'fumigado') return Promise.resolve(true);
     this.state = 'fumigando';
     this.detenerCrecimiento();
     const scene = this.scene;
-    this.fumigarPromise = playFumigation(scene, this, opts)
+    this.fumigarPromise = playFumigation(scene, this, { ...opts, factor: FACTOR_FUMIGACION[this.nivel] ?? 1 })
       .catch((err) => {
         console.warn('[Brote] FumigationFX falló, aplicando estado fumigado directo', err);
         if (this.scene) this.setAlpha(0);
         this.state = 'fumigado';
         this.emit('fumigado', this);
+        return true;
       })
-      .then(() => this);
+      .then((completado) => {
+        this.fumigarPromise = null;
+        if (!completado && this.state === 'fumigando') {
+          this.state = 'activo';
+          this.programarCrecimiento();
+        }
+        return completado;
+      });
     return this.fumigarPromise;
   }
+
+  /** Interrumpe la fumigación en curso (si la hay); la Promise de `fumigar()` resuelve `false`. */
+  cancelarFumigacion() {
+    if (this.state !== 'fumigando') return false;
+    return cancelFumigation(this);
+  }
+
+  /** Progreso 0..1 de la fumigación en curso. */
+  get progresoFumigacion() { return fumigationProgress(this); }
 }

@@ -1,20 +1,21 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { Layout } from './Layout.js';
+import { MINIMAPA, HUD_KEY_DERECHA_Y } from '../scenes/HUDScene.js';
 
 const DEPTH = 9500;
-const SIZE_VERTICAL = 96;
-const SIZE_HORIZONTAL = 140;
 const RADIO_MARCO = 10;
 const PAD = 6; // margen interno: los puntos no tocan el borde del marco
 const ROJO = 0xe74c3c;
-// Espacio que deja libre el panel "Barrio protegido" del HUD (MARGEN 12 + alto 74) más un respiro.
+// Horizontal sin HUD todavía: espacio del panel "Barrio protegido" (MARGEN 12 + alto 74) más un respiro.
 const ALTO_PANEL_BARRIO = 86;
 const GAP_BARRIO = 10;
 
 /**
- * Minimapa fijo en la esquina superior derecha (debajo del panel "Barrio protegido" del HUD,
- * sin superponerse). Transforma linealmente los límites físicos del nivel
+ * Minimapa fijo en la esquina superior derecha. Vertical: 100×100 en (w−12−100, 56), en la zona
+ * que la HUD deja libre; horizontal: 148×148 en (w−12−148, y) donde y es lo que la HUD publica en
+ * el registry (`hudDerechaY`, bajo los paneles "Barrio protegido"/"Riesgo de epidemia") o 96 si
+ * aún no arrancó. Transforma linealmente los límites físicos del nivel
  * (`scene.physics.world.bounds`) al cuadro del minimapa y redibuja los puntos con Graphics
  * en cada `.update()` — pocas entidades, no hace falta RenderTexture.
  * Colores: jugador blanco, estación azul, criaderos sucios amarillo, brotes rojo parpadeante,
@@ -33,22 +34,32 @@ export class Minimap {
   constructor(scene, opts) {
     this.scene = scene;
     this.getEntities = opts.getEntities;
-    this.size = SIZE_HORIZONTAL;
+    this.size = MINIMAPA.horizontal;
 
     this.container = scene.add.container(0, 0).setScrollFactor(0).setDepth(DEPTH);
     this.marco = scene.add.graphics();
     this.puntos = scene.add.graphics();
     this.container.add([this.marco, this.puntos]);
 
-    this.onResize = (w, h) => this.reposicionar(w, h);
-    Layout.onResize(scene, this.onResize);
+    this.onResize = (w) => this.reposicionar(w);
+    this.offResize = Layout.onResize(scene, this.onResize);
+    // La HUD arranca después que GameScene: reubicar cuando publique su ocupación de la derecha.
+    // ('setdata' la primera vez que existe la clave, 'changedata' después.)
+    this.onRegistry = (parent, key) => { if (key === HUD_KEY_DERECHA_Y) this.reposicionar(scene.scale.width); };
+    scene.registry.events.on('setdata', this.onRegistry);
+    scene.registry.events.on('changedata', this.onRegistry);
+    scene.events.once('shutdown', () => this.quitarRegistry());
   }
 
-  reposicionar(w, h) {
-    this.size = Layout.isPortrait(this.scene) ? SIZE_VERTICAL : SIZE_HORIZONTAL;
-    const safe = Layout.safe(this.scene);
-    const x = w - safe.right - this.size;
-    const y = Math.max(safe.top, ALTO_PANEL_BARRIO + GAP_BARRIO);
+  reposicionar(w) {
+    const portrait = Layout.isPortrait(this.scene);
+    this.size = portrait ? MINIMAPA.vertical : MINIMAPA.horizontal;
+    const x = w - MINIMAPA.margen - this.size;
+    let y = MINIMAPA.top;
+    if (!portrait) {
+      const hudY = Number(this.scene.registry.get(HUD_KEY_DERECHA_Y));
+      y = Math.max(MINIMAPA.top, Number.isFinite(hudY) && hudY > 0 ? hudY : ALTO_PANEL_BARRIO + GAP_BARRIO);
+    }
     this.container.setPosition(x, y);
     this.dibujarMarco();
   }
@@ -104,7 +115,14 @@ export class Minimap {
     if (e.player) this.puntoColor(g, e.player.x, e.player.y, b, PALETTE.blanco, 3);
   }
 
+  quitarRegistry() {
+    this.scene.registry.events.off('setdata', this.onRegistry);
+    this.scene.registry.events.off('changedata', this.onRegistry);
+  }
+
   destroy() {
+    this.offResize?.();
+    this.quitarRegistry();
     this.container.destroy();
   }
 }

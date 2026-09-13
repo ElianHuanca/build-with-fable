@@ -19,9 +19,12 @@
  *
  * API:
  *   AudioManager.init(scene)        crea los sonidos (una sola vez por Game) y gestiona el desbloqueo en móviles
- *   AudioManager.bind(scene)        escucha scene.events 'sfx' (name) → AudioManager.play(name)
+ *   AudioManager.bind(scene)        escucha scene.events 'sfx' (name) → AudioManager.play(name),
+ *                                   'sfx:loop' (name) → playLoop(name) y 'sfx:stop' (name) → stopLoop(name);
+ *                                   al cerrar la escena corta todos los loops
  *   AudioManager.play('gluglu')     reproduce sfx_gluglu (name sin prefijo); volumen por key;
  *                                   gluglu/win no se reinician si ya están sonando
+ *   AudioManager.playLoop('motor')  reproduce en loop (idempotente) / stopLoop('motor') lo corta
  *   AudioManager.playMusic()        inicia la música en loop (idempotente)
  *   AudioManager.stopMusic()
  *   AudioManager.setEnabled(bool)   activa/desactiva todo; persiste en localStorage 'dengue.sonido'
@@ -99,8 +102,36 @@ export class AudioManager {
   static bind(scene) {
     if (!AudioManager.game) AudioManager.init(scene);
     const handler = (name) => AudioManager.play(name);
+    const loop = (name) => AudioManager.playLoop(name);
+    const stop = (name) => AudioManager.stopLoop(name);
     scene.events.on('sfx', handler);
-    scene.events.once('shutdown', () => scene.events.off('sfx', handler));
+    scene.events.on('sfx:loop', loop);
+    scene.events.on('sfx:stop', stop);
+    scene.events.once('shutdown', () => {
+      scene.events.off('sfx', handler);
+      scene.events.off('sfx:loop', loop);
+      scene.events.off('sfx:stop', stop);
+      AudioManager.stopAllLoops();
+    });
+  }
+
+  /** Reproduce un efecto en loop (p. ej. 'motor' mientras la camioneta se mueve). Idempotente. */
+  static playLoop(name) {
+    if (!AudioManager._enabled) return;
+    const s = AudioManager.sounds[name];
+    if (!s || (s.isPlaying && s.loop)) return;
+    AudioManager._resumeContext();
+    try { s.play({ volume: volumeFor(name), loop: true }); } catch { /* audio aún bloqueado */ }
+  }
+
+  /** Corta un loop iniciado con playLoop (no hace nada si no está sonando). */
+  static stopLoop(name) {
+    const s = AudioManager.sounds[name];
+    if (s && s.isPlaying && s.loop) s.stop();
+  }
+
+  static stopAllLoops() {
+    for (const s of Object.values(AudioManager.sounds)) if (s.isPlaying && s.loop) s.stop();
   }
 
   /** Reproduce un efecto por nombre sin prefijo ('gluglu' → sfx_gluglu). */

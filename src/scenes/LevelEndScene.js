@@ -44,7 +44,8 @@ function elegirHechos(n = 3) {
  * "Aprendiste hoy" (3 datos de facts.js) y una pregunta de quiz.js con bonus visual +100.
  * scene.launch('LevelEnd', { puntos, limpios, total, tiempo, estrellas, nivelId, nivelNombre, resultado })
  * `resultado`: 'completo' | 'tiempo' | 'epidemia' (default 'completo', para no romper el flujo de v1).
- * Emite en 'Game': 'sfx' ('win', 'points', 'click'), 'nivel:continuar', 'nivel:foto'.
+ * Emite en 'Game': 'sfx' ('win', 'points', 'click'), 'nivel:continuar', 'nivel:foto',
+ * 'nivel:reintentar' (botón "Intentar de nuevo", solo si resultado ≠ 'completo').
  */
 export class LevelEndScene extends Phaser.Scene {
   constructor() { super({ key: 'LevelEnd' }); }
@@ -230,8 +231,12 @@ export class LevelEndScene extends Phaser.Scene {
     if (this.quiz) y = this.crearQuiz(y, anchoTexto);
     y += 20;
 
-    // Botones
-    const btnY = y + 28;
+    // Botones ("Intentar de nuevo" solo si la jornada no terminó completa: epidemia o tiempo)
+    let btnY = y + 28;
+    if (d.resultado !== 'completo') {
+      content.add(this.makeButton(0, btnY, 300, 52, 'Intentar de nuevo', PALETTE.teja, PALETTE.tejaOscura, 20, () => this.finish('nivel:reintentar')));
+      btnY += 66;
+    }
     content.add(this.makeButton(100, btnY, 230, 56, 'Continuar', PALETTE.verde, PALETTE.verdeOscuro, 22, () => this.finish('nivel:continuar')));
     content.add(this.makeButton(-125, btnY, 190, 52, 'Modo foto', PALETTE.grisClaro, PALETTE.gris, 18, () => this.finish('nivel:foto')));
     const contentH = btnY + 30;
