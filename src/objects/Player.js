@@ -20,6 +20,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   /** @param {{x:number,y:number}} [stick] vector -1..1 del joystick táctil */
   move(stick) {
+    // Bloqueado por GameScene mientras dura la limpieza de un criadero.
+    if (this.bloqueado) { this.setVelocity(0); return; }
     let vx = 0, vy = 0;
     if (this.cursors.left.isDown || this.wasd.A.isDown) vx -= 1;
     if (this.cursors.right.isDown || this.wasd.D.isDown) vx += 1;

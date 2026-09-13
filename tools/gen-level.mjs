@@ -140,6 +140,8 @@ function addTile(type, tx, ty) {
 
 const zones = [];
 let manzanaN = 0;
+// Tiles de patio reservados (etapa 3: aquí van los criaderos). Cada entrada: {tx, ty, block, hasGate}.
+const patios = [];
 
 blocks.forEach((b, i) => {
   const isPlaza = i === PLAZA_INDEX;
@@ -184,14 +186,18 @@ blocks.forEach((b, i) => {
   const houses = [];
   for (let k = 0; k < nHouses; k++) {
     const tx = startX + k * 3;
-    houses.push(addHouse(tx, houseRow));
+    const h = addHouse(tx, houseRow);
+    h.patio = [{ tx, ty: patioRow, block: i, hasGate: false }, { tx: tx + 1, ty: patioRow, block: i, hasGate: false }];
+    houses.push(h);
     take(tx, patioRow); take(tx + 1, patioRow); // reservar patio trasero
+    patios.push(...h.patio);
   }
 
   // Muros bajos con portón en el frente de ~60 % de las casas
   if (wallRow >= 0) {
     for (const h of houses) {
       if (rand() < 0.6) {
+        for (const p of h.patio) p.hasGate = true;
         const gate = rand() < 0.5 ? 0 : 1;
         addTile(gate === 0 ? 'porton' : 'muro_h', h.tx, wallRow);
         addTile(gate === 1 ? 'porton' : 'muro_h', h.tx + 1, wallRow);
@@ -226,7 +232,55 @@ blocks.forEach((b, i) => {
 const plaza = blocks[PLAZA_INDEX];
 const spawn = { x: cx(Math.floor((plaza.x0 + plaza.x1) / 2)), y: cy(plaza.y1 + 1) };
 
-const level = { name: 'Equipetrol', width: W, height: H, tile: T, ground, objects, spawn, zones };
+// ---------- Criaderos (etapa 3) ----------
+// 5 criaderos, uno de cada tipo, en tiles de patio de manzanas distintas.
+// El primero es el más cercano al spawn (descubrimiento rápido); el resto se elige
+// por muestreo de punto más lejano, para repartirlos en direcciones distintas.
+const CRIADERO_TYPES = ['llanta', 'tanque', 'balde', 'botella', 'florero'];
+const solidTiles = new Set(); // tiles cubiertos por objetos reales (casas 2×2, resto 1×1)
+for (const o of objects) {
+  const tx = Math.floor(o.x / T), ty = Math.floor(o.y / T);
+  if (o.type.startsWith('casa_')) {
+    for (let dy = -1; dy <= 0; dy++) for (let dx = -1; dx <= 0; dx++) solidTiles.add(key(tx + dx, ty + dy));
+  } else if (o.type !== 'tanque_techo') {
+    solidTiles.add(key(tx, ty));
+  }
+}
+const freePatios = patios.filter((p) => !solidTiles.has(key(p.tx, p.ty)) && ground[p.ty][p.tx].startsWith('pasto'));
+const dist = (p, x, y) => Math.hypot(cx(p.tx) - x, cy(p.ty) - y);
+const chosen = [];
+const usedBlocks = new Set();
+const pick = (p) => { chosen.push(p); usedBlocks.add(p.block); };
+
+// 1) el más cercano al spawn
+pick(freePatios.reduce((best, p) => (dist(p, spawn.x, spawn.y) < dist(best, spawn.x, spawn.y) ? p : best)));
+
+// 2..5) repartidos en direcciones distintas: a partir del ángulo del primero, se
+// buscan objetivos cada 72° alrededor del spawn, a una distancia media (~12 tiles).
+const angleOf = (p) => Math.atan2(cy(p.ty) - spawn.y, cx(p.tx) - spawn.x);
+const angDiff = (a, b) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+const IDEAL = 12 * T;
+const score = (p, target) => angDiff(angleOf(p), target) + 0.06 * Math.abs(dist(p, spawn.x, spawn.y) - IDEAL) / T;
+const baseAngle = angleOf(chosen[0]);
+for (let k = 1; k < CRIADERO_TYPES.length; k++) {
+  const target = baseAngle + (k * 2 * Math.PI) / CRIADERO_TYPES.length;
+  const cands = freePatios.filter((p) => !usedBlocks.has(p.block) && dist(p, spawn.x, spawn.y) >= 5 * T);
+  pick(cands.reduce((best, p) => (score(p, target) < score(best, target) ? p : best)));
+}
+// Garantizar que al menos uno esté en el patio de una casa con portón (misión "Ayuda a la familia").
+if (!chosen.some((p) => p.hasGate)) {
+  const last = chosen.pop(); usedBlocks.delete(last.block);
+  const target = baseAngle + ((CRIADERO_TYPES.length - 1) * 2 * Math.PI) / CRIADERO_TYPES.length;
+  const cands = freePatios.filter((p) => p.hasGate && !usedBlocks.has(p.block) && dist(p, spawn.x, spawn.y) >= 5 * T);
+  pick(cands.reduce((best, p) => (score(p, target) < score(best, target) ? p : best)));
+}
+// Ordenar por distancia al spawn y asignar tipos en orden fijo (llanta primero, como en el mockup).
+chosen.sort((a, b) => dist(a, spawn.x, spawn.y) - dist(b, spawn.x, spawn.y));
+const criaderos = chosen.map((p, i) => ({ type: CRIADERO_TYPES[i], x: cx(p.tx), y: cy(p.ty) }));
+const familiaIdx = chosen.findIndex((p) => p.hasGate);
+const mision_familia = { ...criaderos[familiaIdx] };
+
+const level = { name: 'Equipetrol', width: W, height: H, tile: T, ground, objects, spawn, zones, criaderos, mision_familia };
 
 // ---------- Validación ----------
 const errors = [];
@@ -251,6 +305,20 @@ houseRects.forEach((r, i) => {
     }
 });
 if (!ground[spawn.y / T | 0][spawn.x / T | 0].startsWith('vereda')) errors.push('spawn no está sobre vereda');
+if (criaderos.length !== 5) errors.push(`hay ${criaderos.length} criaderos (esperado 5)`);
+if (new Set(criaderos.map((c) => c.type)).size !== criaderos.length) errors.push('tipos de criadero repetidos');
+if (new Set(chosen.map((p) => p.block)).size !== chosen.length) errors.push('dos criaderos en la misma manzana');
+criaderos.forEach((c, i) => {
+  const tx = Math.floor(c.x / T), ty = Math.floor(c.y / T);
+  if (solidTiles.has(key(tx, ty))) errors.push(`criadero ${c.type} solapa con un objeto sólido en (${tx},${ty})`);
+  if (!ground[ty][tx].startsWith('pasto')) errors.push(`criadero ${c.type} sobre '${ground[ty][tx]}'`);
+  if (!patios.some((p) => p.tx === tx && p.ty === ty)) errors.push(`criadero ${c.type} fuera de un patio`);
+  if (Math.hypot(c.x - spawn.x, c.y - spawn.y) < 2 * T) errors.push(`criadero ${c.type} demasiado cerca del spawn`);
+  for (let j = i + 1; j < criaderos.length; j++)
+    if (Math.hypot(c.x - criaderos[j].x, c.y - criaderos[j].y) < 4 * T) errors.push(`criaderos ${c.type} y ${criaderos[j].type} demasiado juntos`);
+});
+if (!criaderos.some((c) => c.x === mision_familia.x && c.y === mision_familia.y)) errors.push('mision_familia no apunta a un criadero');
+if (!chosen[familiaIdx]?.hasGate) errors.push('mision_familia no está en el patio de una casa con portón');
 
 // ---------- Salida ----------
 mkdirSync(dirname(OUT), { recursive: true });
@@ -268,6 +336,11 @@ for (const o of objects) counts[o.type] = (counts[o.type] || 0) + 1;
 console.log('Objetos:', counts, `(total ${objects.length})`);
 console.log('Zonas:', zones.map((z) => z.name).join(', '));
 console.log('Spawn:', spawn);
+console.log('Criaderos:', criaderos.map((c) => {
+  const z = zones.find((zz) => c.x >= zz.x && c.x < zz.x + zz.w && c.y >= zz.y && c.y < zz.y + zz.h);
+  return `${c.type}@(${c.x / T | 0},${c.y / T | 0}) ${z?.name} d=${Math.round(Math.hypot(c.x - spawn.x, c.y - spawn.y))}`;
+}).join(' | '));
+console.log('Misión familia:', mision_familia);
 console.log('Escrito:', OUT);
 
 if (errors.length) {

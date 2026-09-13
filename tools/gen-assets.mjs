@@ -335,7 +335,193 @@ async function buildDeco() {
   await sharp(Buffer.from(roofTankSVG())).png().toFile(`${OUT}/sprites/tanque_techo.png`);
 }
 
+// ---------- Criaderos (64×64, estados agua | vacio | limpio + capa de agua aparte) ----------
+// Cada criadero devuelve { base, water, top } como fragmentos SVG:
+//   base  = objeto sin agua; water = SOLO la capa de agua; top = partes que van encima del agua (bordes, planta).
+const WATER = P.aguaSucia;
+const shine = (cx, cy, rx, ry, rot = -20) =>
+  `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${P.blanco}" opacity="0.5" transform="rotate(${rot} ${cx} ${cy})"/>`;
+const waterEllipse = (cx, cy, rx, ry, hx, hy, hrx, hry) =>
+  `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="${WATER}"/>` + shine(hx, hy, hrx, hry);
+
+const CRIADEROS = {
+  llanta() {
+    let grooves = '';
+    for (let a = 0; a < 360; a += 30) {
+      grooves += `<path d="M32 12 v5" stroke="#1e2226" stroke-width="2.2" stroke-linecap="round" transform="rotate(${a} 32 32)"/>`;
+    }
+    return {
+      base: `
+        <ellipse cx="32" cy="55" rx="24" ry="6" fill="rgba(0,0,0,0.22)"/>
+        <ellipse cx="32" cy="34" rx="25" ry="23" fill="#1e2226" ${O}/>
+        <circle cx="32" cy="32" r="25" fill="#2b2f33" ${O}/>
+        <circle cx="32" cy="32" r="19" fill="none" stroke="#3a3f44" stroke-width="6"/>
+        ${grooves}
+        <circle cx="32" cy="32" r="12.5" fill="#1e2226" ${O}/>
+        <circle cx="32" cy="33.5" r="11" fill="#15181b" stroke="none"/>`,
+      water: waterEllipse(32, 33, 10.5, 9.5, 28, 29, 3.5, 1.8),
+      top: '',
+    };
+  },
+  tanque() {
+    return {
+      base: `
+        <ellipse cx="32" cy="58" rx="22" ry="5" fill="rgba(0,0,0,0.22)"/>
+        <path d="M11 22 v26 a21 9 0 0 0 42 0 v-26 z" fill="${P.azulGorra}" ${O}/>
+        <path d="M11 30 h42 M11 40 h42" stroke="${P.azulGorraOscuro}" stroke-width="2.4"/>
+        <path d="M11 22 v26 a21 9 0 0 0 42 0 v-26" fill="none" ${O}/>
+        <ellipse cx="32" cy="22" rx="21" ry="9" fill="${P.azulGorraOscuro}" ${O}/>
+        <ellipse cx="32" cy="22" rx="16.5" ry="6.2" fill="#163a75" ${O}/>
+        <rect x="16" y="26" width="5" height="22" rx="2" fill="#5a8fe8" opacity="0.45" stroke="none"/>`,
+      water: waterEllipse(32, 22.5, 15, 5.3, 27, 21, 5, 1.6, -10),
+      top: '',
+    };
+  },
+  balde() {
+    return {
+      base: `
+        <ellipse cx="32" cy="58" rx="20" ry="5" fill="rgba(0,0,0,0.22)"/>
+        <path d="M13 24 l4 26 a15 7 0 0 0 30 0 l4 -26 z" fill="${P.celeste}" ${O}/>
+        <path d="M13 24 l4 26 a15 7 0 0 0 30 0 l4 -26" fill="none" ${O}/>
+        <rect x="19" y="28" width="4" height="20" rx="2" fill="#ffffff" opacity="0.45" stroke="none"/>
+        <ellipse cx="32" cy="24" rx="19" ry="8" fill="#5fb9e0" ${O}/>
+        <ellipse cx="32" cy="24" rx="15" ry="5.6" fill="#3f8fb5" ${O}/>
+        <path d="M14 26 a18 16 0 0 1 36 0" fill="none" stroke="${P.linea}" stroke-width="5" stroke-linecap="round"/>
+        <path d="M14 26 a18 16 0 0 1 36 0" fill="none" stroke="${P.grisClaro}" stroke-width="2.6" stroke-linecap="round"/>`,
+      water: waterEllipse(32, 24.5, 13.5, 4.6, 28, 23, 4.5, 1.4, -10),
+      top: '',
+    };
+  },
+  botella() {
+    // Botella acostada: pico a la izquierda, cuerpo redondeado a la derecha. El agua ocupa la mitad inferior del cuerpo.
+    const body = 'M22 24 h26 a9 9 0 0 1 0 18 h-26 a4 4 0 0 1 -4 -4 v-10 a4 4 0 0 1 4 -4 z';
+    return {
+      base: `
+        <ellipse cx="34" cy="50" rx="26" ry="5" fill="rgba(0,0,0,0.22)"/>
+        <path d="M7 29 a3 3 0 0 1 3 -3 h9 v14 h-9 a3 3 0 0 1 -3 -3 z" fill="#2f7a1a" ${O}/>
+        <path d="${body}" fill="${P.verdeOscuro}" ${O}/>
+        <path d="M24 27 h20" stroke="#ffffff" opacity="0.55" stroke-width="2" stroke-linecap="round"/>`,
+      water: `<clipPath id="bw"><path d="${body}"/></clipPath>` +
+        `<g clip-path="url(#bw)"><rect x="16" y="33" width="44" height="12" fill="${WATER}"/>` +
+        shine(50, 36, 3.2, 1, 0) + `</g>`,
+      top: `
+        <path d="${body}" fill="none" ${O}/>
+        <rect x="29" y="25.5" width="12" height="15" fill="${P.blanco}" ${O}/>
+        <path d="M31.5 29 h7 M31.5 32.5 h7 M31.5 36 h5" stroke="#8a9096" stroke-width="1.2" stroke-linecap="round"/>`,
+    };
+  },
+  florero() {
+    return {
+      base: `
+        <ellipse cx="32" cy="58" rx="22" ry="5" fill="rgba(0,0,0,0.22)"/>
+        <ellipse cx="32" cy="50" rx="21" ry="8" fill="#c95a2a" ${O}/>
+        <ellipse cx="32" cy="48.5" rx="21" ry="8" fill="${P.teja}" ${O}/>
+        <ellipse cx="32" cy="48.5" rx="17" ry="5.6" fill="#b8522a" ${O}/>
+        <path d="M20 26 l3 20 a9 4 0 0 0 18 0 l3 -20 z" fill="${P.teja}" ${O}/>
+        <path d="M20 26 l3 20 a9 4 0 0 0 18 0 l3 -20" fill="none" ${O}/>
+        <rect x="18" y="23" width="28" height="6" rx="2" fill="#f08a52" ${O}/>
+        <rect x="24" y="31" width="3" height="14" rx="1.5" fill="#ffffff" opacity="0.3" stroke="none"/>`,
+      water: `<path d="M15.5 48.5 a16.5 5.4 0 0 0 33 0 a16.5 5.4 0 0 0 -33 0 z M22.5 46.5 a9.5 3.6 0 0 0 19 0 a9.5 3.6 0 0 0 -19 0 z" fill-rule="evenodd" fill="${WATER}"/>` +
+        shine(20, 47.5, 2.6, 0.9, 0),
+      top: `
+        <path d="M32 24 C 30 16, 22 12, 16 12 C 18 20, 24 24, 32 24 Z" fill="${P.verde}" ${O}/>
+        <path d="M32 24 C 34 16, 42 12, 48 12 C 46 20, 40 24, 32 24 Z" fill="${P.verde}" ${O}/>
+        <path d="M32 24 C 30 18, 30 10, 32 4 C 34 10, 34 18, 32 24 Z" fill="${P.verdeOscuro}" ${O}/>
+        <path d="M32 24 C 28 22, 24 24, 22 28" fill="none" stroke="${P.verdeOscuro}" stroke-width="1.6" stroke-linecap="round"/>`,
+    };
+  },
+};
+
+const sparkPath = (cx, cy, r) =>
+  `<path d="M${cx} ${cy - r} Q${cx} ${cy} ${cx + r} ${cy} Q${cx} ${cy} ${cx} ${cy + r} Q${cx} ${cy} ${cx - r} ${cy} Q${cx} ${cy} ${cx} ${cy - r} Z"`;
+const sparkSVG = (cx, cy, r) => `${sparkPath(cx, cy, r)} fill="${P.amarillo}" stroke="${P.linea}" stroke-width="1.2" stroke-linejoin="round"/>`;
+
+const CLEAN_DECOR = `
+  ${sparkSVG(9, 16, 7)}
+  ${sparkSVG(56, 42, 6)}
+  ${sparkSVG(15, 52, 5.5)}
+  <circle cx="53" cy="11" r="8" fill="${P.blanco}" ${O}/>
+  <path d="M48.5 11.5 l3 3 l6 -6.5" fill="none" stroke="${P.verde}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>`;
+
+async function buildCriaderos() {
+  for (const [name, fn] of Object.entries(CRIADEROS)) {
+    const { base, water, top } = fn();
+    const out = {
+      [`${name}_agua`]: base + water + top,
+      [`${name}_vacio`]: base + top,
+      [`${name}_limpio`]: base + top + CLEAN_DECOR,
+      [`agua_${name}`]: water,
+    };
+    for (const [file, body] of Object.entries(out)) {
+      await sharp(Buffer.from(svg(T, T, body))).png().toFile(`${OUT}/sprites/${file}.png`);
+    }
+  }
+}
+
+// ---------- FX y UI ----------
+function dropSVG() {
+  return svg(16, 16, `
+    <path d="M8 1.5 C 5.5 6, 2.5 8.5, 2.5 11 a5.5 5.5 0 0 0 11 0 c0 -2.5 -3 -5 -5.5 -9.5 z" fill="${WATER}" stroke="${P.linea}" stroke-width="1.2" stroke-linejoin="round"/>
+    <ellipse cx="5.8" cy="10.5" rx="1.3" ry="2" fill="${P.blanco}" opacity="0.6" transform="rotate(-15 5.8 10.5)"/>
+  `);
+}
+function sparkFxSVG() {
+  return svg(16, 16, sparkSVG(8, 8, 7));
+}
+
+async function buildNoise() {
+  const n = 256;
+  const buf = Buffer.alloc(n * n);
+  let s = 1234567; // semilla fija (LCG)
+  for (let i = 0; i < buf.length; i++) {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    buf[i] = s >>> 24;
+  }
+  await sharp(buf, { raw: { width: n, height: n, channels: 1 } }).png().toFile(`${OUT}/sprites/noise.png`);
+}
+
+function alertSVG() {
+  return svg(48, 48, `
+    <ellipse cx="24" cy="44" rx="16" ry="3.5" fill="rgba(0,0,0,0.2)"/>
+    <circle cx="24" cy="23" r="20" fill="#e53935" stroke="${P.blanco}" stroke-width="4"/>
+    <circle cx="24" cy="23" r="22" fill="none" stroke="${P.linea}" stroke-width="1.6"/>
+    <rect x="21" y="10" width="6" height="16" rx="3" fill="${P.blanco}"/>
+    <circle cx="24" cy="32.5" r="3.4" fill="${P.blanco}"/>
+  `);
+}
+function keyESVG() {
+  return svg(40, 40, `
+    <rect x="3" y="5" width="34" height="34" rx="8" fill="#b9c2cb"/>
+    <rect x="3" y="2" width="34" height="34" rx="8" fill="${P.blanco}" stroke="${P.marino}" stroke-width="2.6"/>
+    <text x="20" y="29" text-anchor="middle" font-family="Arial, Helvetica, 'DejaVu Sans', sans-serif" font-weight="bold" font-size="24" fill="${P.marino}">E</text>
+  `);
+}
+function panelSVG() {
+  return svg(48, 48, `
+    <rect x="1.5" y="1.5" width="45" height="45" rx="12" fill="${P.marino}" fill-opacity="0.92" stroke="${P.celeste}" stroke-width="3"/>
+  `);
+}
+function btnGreenSVG() {
+  return svg(48, 48, `
+    <rect x="1.5" y="1.5" width="45" height="45" rx="14" fill="${P.verde}" stroke="${P.verdeOscuro}" stroke-width="3"/>
+    <path d="M6 14 a10 10 0 0 1 10 -9 h16 a10 10 0 0 1 10 9 z" fill="#8fdc6b" opacity="0.7"/>
+  `);
+}
+
+async function buildFX() {
+  mkdirSync(`${OUT}/ui`, { recursive: true });
+  await sharp(Buffer.from(dropSVG())).png().toFile(`${OUT}/sprites/drop.png`);
+  await sharp(Buffer.from(sparkFxSVG())).png().toFile(`${OUT}/sprites/spark.png`);
+  await buildNoise();
+  await sharp(Buffer.from(alertSVG())).png().toFile(`${OUT}/ui/alert.png`);
+  await sharp(Buffer.from(keyESVG())).png().toFile(`${OUT}/ui/key_e.png`);
+  await sharp(Buffer.from(panelSVG())).png().toFile(`${OUT}/ui/panel.png`);
+  await sharp(Buffer.from(btnGreenSVG())).png().toFile(`${OUT}/ui/btn_green.png`);
+}
+
 await buildPlayerSheet();
 await buildTileset();
 await buildDeco();
+await buildCriaderos();
+await buildFX();
 console.log('Assets generados en', OUT);

@@ -6,7 +6,7 @@ import { PALETTE } from './data/palette.js';
 export const GAME_W = 960;
 export const GAME_H = 540;
 
-new Phaser.Game({
+const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
   width: GAME_W,
@@ -25,3 +25,6 @@ new Phaser.Game({
   input: { activePointers: 3 },
   scene: [BootScene, GameScene],
 });
+
+// Acceso para pruebas automatizadas y depuración en consola.
+window.__game = game;

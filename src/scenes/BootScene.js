@@ -22,6 +22,12 @@ export class BootScene extends Phaser.Scene {
     for (const k of ['casa_a', 'casa_b', 'arbusto', 'muro_h', 'muro_v', 'porton', 'tanque_techo']) {
       this.load.image(k, BASE + `sprites/${k}.png`);
     }
+    // Fase 3: criaderos (3 estados + capa de agua), partículas y kit de UI. Los genera tools/gen-assets.mjs.
+    for (const t of ['llanta', 'tanque', 'balde', 'botella', 'florero']) {
+      for (const k of [`${t}_agua`, `${t}_vacio`, `${t}_limpio`, `agua_${t}`]) this.load.image(k, BASE + `sprites/${k}.png`);
+    }
+    for (const k of ['drop', 'spark', 'noise']) this.load.image(k, BASE + `sprites/${k}.png`);
+    for (const k of ['alert', 'key_e', 'panel', 'btn_green']) this.load.image(k, BASE + `ui/${k}.png`);
     // Nivel generado por tools/gen-level.mjs (src/levels/equipetrol.json), servido como asset de Vite.
     this.load.json('level_equipetrol', new URL('../levels/equipetrol.json', import.meta.url).href);
   }
