@@ -10,6 +10,9 @@
     "calle_linea_v",
     "cruce",
     "vereda",
-    "tierra"
+    "tierra",
+    "cruce_v",
+    "esquina",
+    "vereda_borde"
   ]
 }

@@ -158,11 +158,27 @@ function tileSVG(kind) {
     case 'tierra':
       g.push(`<rect width="64" height="64" fill="#c9a06a"/><circle cx="20" cy="22" r="2" fill="#b58a55"/><circle cx="44" cy="46" r="2.5" fill="#b58a55"/>`);
       break;
+    case 'cruce_v': // cruce peatonal con franjas horizontales (para calles verticales)
+      g.push(`<rect width="64" height="64" fill="${P.gris}"/>`);
+      for (let i = 0; i < 4; i++) g.push(`<rect x="8" y="${6 + i * 15}" width="48" height="8" fill="${P.blanco}" opacity="0.9"/>`);
+      break;
+    case 'esquina': // calle lisa con alcantarilla
+      g.push(`<rect width="64" height="64" fill="${P.gris}"/>`);
+      g.push(`<circle cx="32" cy="32" r="9" fill="#3a3f44" stroke="#2e3338" stroke-width="1.6"/>`);
+      g.push(`<circle cx="32" cy="32" r="6" fill="none" stroke="#5a6066" stroke-width="1.4"/>`);
+      g.push(`<path d="M28 29 h8 M28 32 h8 M28 35 h8" stroke="#5a6066" stroke-width="1.2" stroke-linecap="round"/>`);
+      break;
+    case 'vereda_borde': // vereda con cordón inferior más oscuro
+      g.push(`<rect width="64" height="64" fill="#cfd3d6"/>`);
+      g.push(`<path d="M32 0 v58 M0 29 h64" stroke="#b3b8bd" stroke-width="2"/>`);
+      g.push(`<rect x="0" y="58" width="64" height="6" fill="#8a9096"/>`);
+      g.push(`<rect x="0" y="57" width="64" height="1.5" fill="#a5aaaf"/>`);
+      break;
   }
   return svg(T, T, g.join(''));
 }
 
-const TILES = ['pasto', 'pasto_oscuro', 'pasto_seco', 'calle', 'calle_linea', 'calle_linea_v', 'cruce', 'vereda', 'tierra'];
+const TILES = ['pasto', 'pasto_oscuro', 'pasto_seco', 'calle', 'calle_linea', 'calle_linea_v', 'cruce', 'vereda', 'tierra', 'cruce_v', 'esquina', 'vereda_borde'];
 
 async function buildTileset() {
   const cols = 4, rows = Math.ceil(TILES.length / cols);
@@ -195,9 +211,128 @@ function plantSVG() {
   `);
 }
 
+function bushSVG() {
+  return svg(48, 48, `
+    <ellipse cx="24" cy="42" rx="16" ry="4.5" fill="rgba(0,0,0,0.22)"/>
+    <circle cx="24" cy="26" r="17" fill="${P.verdeOscuro}" ${O}/>
+    <circle cx="17" cy="21" r="9" fill="${P.verde}" stroke="none"/>
+    <circle cx="31" cy="24" r="8" fill="${P.verde}" stroke="none"/>
+    <circle cx="23" cy="32" r="7" fill="${P.verde}" stroke="none"/>
+    <circle cx="16" cy="18" r="3" fill="#8fdc6b" stroke="none"/>
+  `);
+}
+
+// Casa estilo Santa Cruz, vista top-down tres cuartos. variant 'a': cumbrera horizontal; 'b': cumbrera vertical
+function houseSVG(variant) {
+  const g = [];
+  const wall = variant === 'a' ? P.blanco : '#f5e9d0';
+  const wallShade = variant === 'a' ? '#e6e9ec' : '#e8d8b8';
+  g.push(`<ellipse cx="64" cy="118" rx="58" ry="8" fill="rgba(0,0,0,0.22)"/>`);
+  // Pared frontal (parte inferior visible)
+  g.push(`<rect x="10" y="84" width="108" height="36" rx="3" fill="${wall}" ${O}/>`);
+  g.push(`<rect x="10" y="84" width="108" height="6" fill="${wallShade}" stroke="none"/>`);
+  // Puerta
+  g.push(`<rect x="54" y="94" width="20" height="26" rx="3" fill="#8b5a2b" ${O}/>`);
+  g.push(`<rect x="57" y="97" width="14" height="10" rx="1.5" fill="#a56d38" stroke="none"/>`);
+  g.push(`<circle cx="69" cy="109" r="1.6" fill="${P.amarillo}" stroke="none"/>`);
+  // Ventana celeste
+  const wx = variant === 'a' ? 22 : 86;
+  g.push(`<rect x="${wx}" y="94" width="20" height="16" rx="2" fill="${P.celeste}" ${O}/>`);
+  g.push(`<path d="M${wx + 10} 94 v16 M${wx} 102 h20" stroke="${P.linea}" stroke-width="1.4"/>`);
+  g.push(`<rect x="${wx + 2}" y="96" width="5" height="4" fill="#ffffff" opacity="0.6" stroke="none"/>`);
+  // Techo
+  const tiles = (x, y, w, h) => {
+    let s = '';
+    for (let yy = y + 8; yy < y + h - 2; yy += 8) s += `<path d="M${x + 2} ${yy} h${w - 4}" stroke="${P.tejaOscura}" stroke-width="1.6"/>`;
+    for (let yy = y + 4, k = 0; yy < y + h - 2; yy += 8, k++) {
+      const off = k % 2 ? 4 : 0;
+      for (let xx = x + 6 + off; xx < x + w - 4; xx += 8) s += `<path d="M${xx} ${yy - 3} v3" stroke="${P.tejaOscura}" stroke-width="1.4" stroke-linecap="round"/>`;
+    }
+    return `<g clip-path="url(#roof-${variant})">${s}</g>`;
+  };
+  if (variant === 'a') {
+    // Techo a dos aguas con cumbrera horizontal: faldón trasero (más oscuro) y frontal
+    g.push(`<clipPath id="roof-a"><rect x="4" y="8" width="120" height="84"/></clipPath>`);
+    g.push(`<rect x="4" y="8" width="120" height="34" rx="3" fill="#d5602e" ${O}/>`);
+    g.push(`<rect x="4" y="40" width="120" height="52" rx="3" fill="${P.teja}" ${O}/>`);
+    g.push(tiles(4, 40, 120, 52));
+    g.push(`<path d="M8 20 h112" stroke="${P.tejaOscura}" stroke-width="1.6"/><path d="M8 30 h112" stroke="${P.tejaOscura}" stroke-width="1.6"/>`);
+    // Cumbrera
+    g.push(`<rect x="2" y="37" width="124" height="6" rx="3" fill="${P.tejaOscura}" ${O}/>`);
+  } else {
+    // Cumbrera vertical: faldón izquierdo y derecho
+    g.push(`<clipPath id="roof-b"><rect x="4" y="8" width="120" height="84"/></clipPath>`);
+    g.push(`<path d="M6 12 q0 -4 4 -4 h54 v84 h-54 q-4 0 -4 -4 z" fill="${P.teja}" ${O}/>`);
+    g.push(`<path d="M64 8 h54 q4 0 4 4 v76 q0 4 -4 4 h-54 z" fill="#d5602e" ${O}/>`);
+    // Tejas: líneas paralelas a la cumbrera, en cada faldón
+    let s = '';
+    for (let xx = 14; xx < 60; xx += 8) s += `<path d="M${xx} 10 v80" stroke="${P.tejaOscura}" stroke-width="1.6"/>`;
+    for (let xx = 74; xx < 120; xx += 8) s += `<path d="M${xx} 10 v80" stroke="${P.tejaOscura}" stroke-width="1.6"/>`;
+    for (let xx = 10, k = 0; xx < 122; xx += 8, k++) {
+      if (xx > 58 && xx < 70) continue;
+      const off = k % 2 ? 4 : 0;
+      for (let yy = 14 + off; yy < 88; yy += 8) s += `<path d="M${xx} ${yy} h3" stroke="${P.tejaOscura}" stroke-width="1.4" stroke-linecap="round"/>`;
+    }
+    g.push(`<g clip-path="url(#roof-b)">${s}</g>`);
+    g.push(`<rect x="61" y="6" width="6" height="88" rx="3" fill="${P.tejaOscura}" ${O}/>`);
+  }
+  // Alero: sombra sobre la pared
+  g.push(`<rect x="10" y="${variant === 'a' ? 92 : 92}" width="108" height="3" fill="rgba(0,0,0,0.18)" stroke="none"/>`);
+  return svg(128, 128, g.join(''));
+}
+
+function wallSVG(horizontal) {
+  const w = horizontal ? 64 : 32, h = horizontal ? 32 : 64;
+  if (horizontal) {
+    return svg(w, h, `
+      <ellipse cx="32" cy="29" rx="30" ry="3" fill="rgba(0,0,0,0.2)"/>
+      <rect x="1" y="10" width="62" height="18" rx="2" fill="#cfd3d6" ${O}/>
+      <rect x="1" y="16" width="62" height="12" fill="#b3b8bd" stroke="none"/>
+      <rect x="0" y="6" width="64" height="8" rx="2" fill="#e6e9ec" ${O}/>
+    `);
+  }
+  return svg(w, h, `
+    <ellipse cx="16" cy="60" rx="12" ry="3" fill="rgba(0,0,0,0.2)"/>
+    <rect x="8" y="2" width="16" height="58" rx="2" fill="#cfd3d6" ${O}/>
+    <rect x="8" y="50" width="16" height="10" fill="#b3b8bd" stroke="none"/>
+    <rect x="4" y="0" width="24" height="52" rx="2" fill="#e6e9ec" ${O}/>
+  `);
+}
+
+function gateSVG() {
+  let bars = '';
+  for (let x = 10; x <= 54; x += 11) bars += `<path d="M${x} 6 v20" stroke="${P.marino}" stroke-width="3" stroke-linecap="round"/>`;
+  return svg(64, 32, `
+    <ellipse cx="32" cy="29" rx="30" ry="3" fill="rgba(0,0,0,0.2)"/>
+    ${bars}
+    <rect x="0" y="2" width="64" height="5" rx="2" fill="${P.marino}" ${O}/>
+    <rect x="0" y="24" width="64" height="5" rx="2" fill="${P.marino}" ${O}/>
+    <rect x="0" y="14" width="64" height="3" rx="1.5" fill="${P.marino}" stroke="none"/>
+    <circle cx="32" cy="15.5" r="2.5" fill="${P.amarillo}" ${O}/>
+  `);
+}
+
+function roofTankSVG() {
+  return svg(40, 40, `
+    <ellipse cx="20" cy="35" rx="16" ry="4" fill="rgba(0,0,0,0.25)"/>
+    <circle cx="20" cy="22" r="16" fill="#2a2e32" ${O}/>
+    <circle cx="20" cy="19" r="16" fill="#3a3f44" ${O}/>
+    <circle cx="20" cy="19" r="11" fill="#2f3438" stroke="${P.linea}" stroke-width="1.2"/>
+    <circle cx="20" cy="19" r="4" fill="#4a5056" ${O}/>
+    <path d="M11 12 a12 12 0 0 1 9 -5" fill="none" stroke="#7a8188" stroke-width="2.4" stroke-linecap="round"/>
+  `);
+}
+
 async function buildDeco() {
   await sharp(Buffer.from(treeSVG())).png().toFile(`${OUT}/sprites/arbol.png`);
   await sharp(Buffer.from(plantSVG())).png().toFile(`${OUT}/sprites/planta.png`);
+  await sharp(Buffer.from(bushSVG())).png().toFile(`${OUT}/sprites/arbusto.png`);
+  await sharp(Buffer.from(houseSVG('a'))).png().toFile(`${OUT}/sprites/casa_a.png`);
+  await sharp(Buffer.from(houseSVG('b'))).png().toFile(`${OUT}/sprites/casa_b.png`);
+  await sharp(Buffer.from(wallSVG(true))).png().toFile(`${OUT}/sprites/muro_h.png`);
+  await sharp(Buffer.from(wallSVG(false))).png().toFile(`${OUT}/sprites/muro_v.png`);
+  await sharp(Buffer.from(gateSVG())).png().toFile(`${OUT}/sprites/porton.png`);
+  await sharp(Buffer.from(roofTankSVG())).png().toFile(`${OUT}/sprites/tanque_techo.png`);
 }
 
 await buildPlayerSheet();

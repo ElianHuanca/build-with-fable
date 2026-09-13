@@ -19,6 +19,11 @@ export class BootScene extends Phaser.Scene {
     this.load.json('tilesMeta', BASE + 'tiles/tileset.json');
     this.load.image('arbol', BASE + 'sprites/arbol.png');
     this.load.image('planta', BASE + 'sprites/planta.png');
+    for (const k of ['casa_a', 'casa_b', 'arbusto', 'muro_h', 'muro_v', 'porton', 'tanque_techo']) {
+      this.load.image(k, BASE + `sprites/${k}.png`);
+    }
+    // Nivel generado por tools/gen-level.mjs (src/levels/equipetrol.json), servido como asset de Vite.
+    this.load.json('level_equipetrol', new URL('../levels/equipetrol.json', import.meta.url).href);
   }
 
   create() {
