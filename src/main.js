@@ -15,14 +15,15 @@ export const GAME_H = 540;
 const game = new Phaser.Game({
   type: Phaser.AUTO,
   parent: 'game',
-  width: GAME_W,
-  height: GAME_H,
+  // v2: el lienzo ocupa toda la ventana (mobile first); GAME_W/GAME_H quedan como referencia.
+  width: '100%',
+  height: '100%',
   backgroundColor: PALETTE.marino,
   pixelArt: false,
   antialias: true,
   scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
+    mode: Phaser.Scale.RESIZE,
+    autoCenter: Phaser.Scale.NO_CENTER,
   },
   physics: {
     default: 'arcade',
