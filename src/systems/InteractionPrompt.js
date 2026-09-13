@@ -1,10 +1,11 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
+import { touchSize } from '../data/ui.js';
 
 const PANEL_W = 260;
-const PANEL_H = 96;
-const BTN_W = 190;
-const BTN_H = 36;
+const PANEL_H = 100;
+const BTN_W = 200;
+const BTN_H = 44;
 const DEPTH = 9000;
 
 /**
@@ -13,13 +14,18 @@ const DEPTH = 9000;
  * También ofrece una etiqueta flotante en coordenadas de mundo ("Presiona E").
  */
 export class InteractionPrompt {
-  constructor(scene) {
+  /**
+   * @param {{ sinBoton?: boolean }} [opts] `sinBoton`: modo táctil con botón de acción propio;
+   *   el cartel muestra "Toca el botón de acción" en lugar del botón "Eliminar agua".
+   */
+  constructor(scene, opts = {}) {
     this.scene = scene;
     this.callback = null;
     this.busy = false;
     this.visible = false;
     this.tween = null;
-    this.isTouch = !!scene.sys.game.device.input.touch;
+    this.sinBoton = !!opts.sinBoton;
+    this.isTouch = this.sinBoton || !!scene.sys.game.device.input.touch;
 
     const cx = scene.scale.width / 2;
     this.container = scene.add.container(cx, 70).setScrollFactor(0).setDepth(DEPTH).setVisible(false);
@@ -43,7 +49,7 @@ export class InteractionPrompt {
     }).setOrigin(0, 0.5);
 
     // Botón
-    const btnY = PANEL_H / 2 - 12 - BTN_H / 2;
+    const btnY = PANEL_H / 2 - 8 - BTN_H / 2;
     this.button = scene.add.container(0, btnY);
     this.btnBg = scene.add.graphics();
     this.drawButton(PALETTE.verde);
@@ -56,7 +62,8 @@ export class InteractionPrompt {
       fontFamily: 'Arial, sans-serif', fontSize: 16, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0, 0.5);
     this.button.add([this.btnBg, keyBox, keyText, label]);
-    this.button.setSize(BTN_W, BTN_H)
+    // Área táctil mayor que el dibujo (≥ 44 CSS px en teléfonos con Scale.FIT).
+    this.button.setSize(...touchSize(BTN_W, BTN_H))
       .setInteractive({ useHandCursor: true })
       .on('pointerover', () => { if (!this.busy) this.drawButton(PALETTE.verdeOscuro); })
       .on('pointerout', () => { if (!this.busy) this.drawButton(PALETTE.verde); })
@@ -66,12 +73,24 @@ export class InteractionPrompt {
       });
 
     this.container.add([panel, icon, bang, title, this.button]);
+    if (this.sinBoton) {
+      // El botón de acción vive en TouchControls: aquí solo una pista de texto.
+      this.button.setVisible(false).disableInteractive();
+      this.hint = scene.add.text(0, btnY, 'Toca el botón de acción', {
+        fontFamily: 'Arial, sans-serif', fontSize: 15, fontStyle: 'bold', color: PALETTE.amarillo,
+      }).setOrigin(0.5);
+      this.container.add(this.hint);
+    }
+    // El hit test de Phaser usa el scrollFactor del propio objeto (no el del contenedor padre):
+    // sin esto el botón solo respondía con la cámara en (0,0). Se propaga a todos los hijos.
+    this.container.setScrollFactor(0, 0, true);
+    this.button.setScrollFactor(0, 0, true);
 
     // Etiqueta flotante en el mundo
-    const labelText = this.isTouch ? 'Toca Eliminar' : 'Presiona E';
+    const labelText = this.sinBoton ? 'Toca el botón' : this.isTouch ? 'Toca Eliminar' : 'Presiona E';
     this.worldLabel = scene.add.container(0, 0).setDepth(DEPTH - 1).setVisible(false);
     const lt = scene.add.text(0, 0, labelText, {
-      fontFamily: 'Arial, sans-serif', fontSize: 12, fontStyle: 'bold', color: PALETTE.blanco,
+      fontFamily: 'Arial, sans-serif', fontSize: 14, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5);
     const lw = lt.width + 14, lh = lt.height + 8;
     const lbg = scene.add.graphics();
@@ -116,6 +135,7 @@ export class InteractionPrompt {
     this.busy = !!busy;
     this.button.setAlpha(this.busy ? 0.45 : 1);
     this.drawButton(PALETTE.verde);
+    if (this.sinBoton) { this.hint?.setAlpha(this.busy ? 0.45 : 1); return; }
     if (this.busy) this.button.disableInteractive(); else this.button.setInteractive({ useHandCursor: true });
   }
 

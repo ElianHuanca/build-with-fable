@@ -16,7 +16,8 @@
  * API:
  *   AudioManager.init(scene)        crea los sonidos (una sola vez por Game) y gestiona el desbloqueo en móviles
  *   AudioManager.bind(scene)        escucha scene.events 'sfx' (name) → AudioManager.play(name)
- *   AudioManager.play('gluglu')     reproduce sfx_gluglu (name sin prefijo)
+ *   AudioManager.play('gluglu')     reproduce sfx_gluglu (name sin prefijo); volumen por key;
+ *                                   gluglu/win no se reinician si ya están sonando
  *   AudioManager.playMusic()        inicia la música en loop (idempotente)
  *   AudioManager.stopMusic()
  *   AudioManager.setEnabled(bool)   activa/desactiva todo; persiste en localStorage 'dengue.sonido'
@@ -26,8 +27,13 @@
 const STORAGE_KEY = 'dengue.sonido';
 const SFX = ['step', 'detect', 'gluglu', 'pop', 'points', 'win', 'click'];
 const MUSIC_KEY = 'music';
-const SFX_VOLUME = 0.9;
 const MUSIC_VOLUME = 0.6;
+const DEFAULT_VOLUME = 0.8;
+/** Volumen por key (el resto usa DEFAULT_VOLUME). */
+const VOLUMES = { step: 0.35, click: 0.6, music: MUSIC_VOLUME };
+/** Sonidos largos que no deben reiniciarse si ya están sonando. */
+const NO_OVERLAP = new Set(['gluglu', 'win']);
+const volumeFor = (name) => VOLUMES[name] ?? DEFAULT_VOLUME;
 
 function readEnabled() {
   try {
@@ -43,6 +49,7 @@ export class AudioManager {
   static _enabled = readEnabled();
   static _musicWanted = false;
   static _globalHandler = null;
+  static _resuming = false;
 
   static get enabled() { return AudioManager._enabled; }
 
@@ -57,9 +64,9 @@ export class AudioManager {
     const sm = scene.sound;
     for (const name of SFX) {
       const key = `sfx_${name}`;
-      if (scene.cache.audio.exists(key)) AudioManager.sounds[name] = sm.add(key, { volume: SFX_VOLUME });
+      if (scene.cache.audio.exists(key)) AudioManager.sounds[name] = sm.add(key, { volume: volumeFor(name) });
     }
-    if (scene.cache.audio.exists(MUSIC_KEY)) AudioManager.music = sm.add(MUSIC_KEY, { loop: true, volume: MUSIC_VOLUME });
+    if (scene.cache.audio.exists(MUSIC_KEY)) AudioManager.music = sm.add(MUSIC_KEY, { loop: true, volume: volumeFor(MUSIC_KEY) });
 
     // Canal global: las escenas de menú emiten `game.events.emit('sfx', name)` (una sola vez por Game).
     if (AudioManager._globalHandler) game.events.off('sfx', AudioManager._globalHandler);
@@ -97,13 +104,27 @@ export class AudioManager {
     if (!AudioManager._enabled) return;
     const s = AudioManager.sounds[name];
     if (!s) return;
-    try { s.play(); } catch { /* audio aún bloqueado */ }
+    if (NO_OVERLAP.has(name) && s.isPlaying) return;
+    AudioManager._resumeContext();
+    try { s.play({ volume: volumeFor(name) }); } catch { /* audio aún bloqueado */ }
+  }
+
+  /** Si el AudioContext quedó suspendido (autoplay), intenta reanudarlo una vez por llamada. */
+  static _resumeContext() {
+    const ctx = AudioManager.game?.sound?.context;
+    if (ctx && ctx.state === 'suspended' && !AudioManager._resuming) {
+      AudioManager._resuming = true;
+      try {
+        ctx.resume().catch(() => {}).finally(() => { AudioManager._resuming = false; });
+      } catch { AudioManager._resuming = false; }
+    }
   }
 
   static playMusic() {
     AudioManager._musicWanted = true;
     const m = AudioManager.music;
     if (!m || !AudioManager._enabled || m.isPlaying) return;
+    AudioManager._resumeContext();
     try { m.play(); } catch { /* audio aún bloqueado */ }
   }
 

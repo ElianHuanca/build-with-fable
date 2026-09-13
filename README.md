@@ -17,6 +17,19 @@ el progreso se guarda en `localStorage`. Construido con [Phaser 3.90](https://ph
 |---|---|---|---|---|---|
 | ![](docs/capturas/menu.png) | ![](docs/capturas/seleccion.png) | ![](docs/capturas/deteccion.png) | ![](docs/capturas/popup.png) | ![](docs/capturas/fin_nivel.png) | ![](docs/capturas/modo_foto.png) |
 
+## Video demo
+
+Recorrido completo de ~60 s: menú, selección de nivel, caminata por el barrio, animación de
+eliminación de un criadero, popup educativo, fin de nivel con estrellas y modo foto.
+
+- [docs/demo/dengue-invaders-demo.webm](docs/demo/dengue-invaders-demo.webm) (VP8, 960×540)
+- [docs/demo/poster.png](docs/demo/poster.png) (fotograma del segundo 10)
+
+[![Video demo](docs/demo/poster.png)](docs/demo/dengue-invaders-demo.webm)
+
+Se regenera con `npm run build && npm run demo:video` (`tools/record-demo.mjs`, requiere
+Playwright con Chromium; si hay `ffmpeg` con libx264 en el PATH también produce un `.mp4`).
+
 ## Cómo correrlo
 
 Requiere Node.js 20 o superior.

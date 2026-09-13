@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
+import { touchSize } from '../data/ui.js';
 
 const FONT = 'Arial, sans-serif';
 const MENSAJES = {
@@ -130,8 +131,8 @@ export class LevelEndScene extends Phaser.Scene {
     }
 
     // Botones
-    this.add.existing(this.makeButton(cx + 90, 470, 220, 50, 'Continuar', PALETTE.verde, PALETTE.verdeOscuro, 22, () => this.finish('nivel:continuar')));
-    this.add.existing(this.makeButton(cx - 120, 470, 180, 44, 'Modo foto', PALETTE.grisClaro, PALETTE.gris, 18, () => this.finish('nivel:foto')));
+    this.add.existing(this.makeButton(cx + 100, 470, 230, 56, 'Continuar', PALETTE.verde, PALETTE.verdeOscuro, 22, () => this.finish('nivel:continuar')));
+    this.add.existing(this.makeButton(cx - 125, 470, 190, 52, 'Modo foto', PALETTE.grisClaro, PALETTE.gris, 18, () => this.finish('nivel:foto')));
 
     this.input.keyboard?.on('keydown-ENTER', () => this.finish('nivel:continuar'));
     this.input.keyboard?.on('keydown-SPACE', () => this.finish('nivel:continuar'));
@@ -165,7 +166,7 @@ export class LevelEndScene extends Phaser.Scene {
     const t = this.add.text(0, 0, label, {
       fontFamily: FONT, fontSize: size, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5);
-    c.add([g, t]).setSize(w, h).setInteractive({ useHandCursor: true })
+    c.add([g, t]).setSize(...touchSize(w, h)).setInteractive({ useHandCursor: true })
       .on('pointerover', () => draw(hover))
       .on('pointerout', () => draw(color))
       .on('pointerdown', cb);

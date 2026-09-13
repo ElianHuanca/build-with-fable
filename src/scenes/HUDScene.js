@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
+import { esModoTactil } from '../data/ui.js';
 
 const FONT = 'Arial, sans-serif';
 const MARGEN = 12;
@@ -10,6 +11,8 @@ const STAR_R = 11;
 const DEPTH_PANEL = 10;
 const DEPTH_DATO = 20;
 const TWEEN_BARRA_MS = 450;
+/** En modo táctil el panel "Barrio protegido" se corre a la izquierda para dejar sitio al botón PAUSA. */
+const OFFSET_PAUSA_TACTIL = 60;
 
 /**
  * Claves del registry que la HUD lee (las escribe GameScene):
@@ -143,7 +146,7 @@ export class HUDScene extends Phaser.Scene {
   crearPanelMisiones() {
     this.misionesPanel = this.add.container(MARGEN, MARGEN + this.jugadorH + 8).setDepth(DEPTH_PANEL);
     this.misionesBg = this.add.graphics();
-    this.misionesTitulo = this.texto(12, 8, 'Misiones:', 15, { color: PALETTE.celeste });
+    this.misionesTitulo = this.texto(12, 8, 'Misiones:', 16, { color: PALETTE.celeste });
     this.misionesPanel.add([this.misionesBg, this.misionesTitulo]);
     this.misionesItems = []; // {check, texto, progreso}
     this.renderMisiones();
@@ -151,15 +154,15 @@ export class HUDScene extends Phaser.Scene {
 
   renderMisiones() {
     const lista = Array.isArray(this.estado.misiones) ? this.estado.misiones : [];
-    const filaH = 24, top = 32;
+    const filaH = 26, top = 34;
     const h = top + Math.max(1, lista.length) * filaH + 4;
     this.panel(this.misionesBg, PANEL_W, h);
 
     // Crear o reciclar filas
     while (this.misionesItems.length < lista.length) {
       const check = this.add.graphics();
-      const texto = this.texto(0, 0, '', 14).setOrigin(0, 0.5);
-      const progreso = this.texto(PANEL_W - 12, 0, '', 13, { color: PALETTE.celeste }).setOrigin(1, 0.5);
+      const texto = this.texto(0, 0, '', 15).setOrigin(0, 0.5);
+      const progreso = this.texto(PANEL_W - 12, 0, '', 14, { color: PALETTE.celeste }).setOrigin(1, 0.5);
       this.misionesPanel.add([check, texto, progreso]);
       this.misionesItems.push({ check, texto, progreso });
     }
@@ -196,8 +199,8 @@ export class HUDScene extends Phaser.Scene {
 
   crearPanelBarrio() {
     const h = 74;
-    this.barrioW = PANEL_W;
-    this.barrio = this.add.container(this.scale.width - MARGEN - PANEL_W, MARGEN).setDepth(DEPTH_PANEL);
+    this.barrioW = PANEL_W + (esModoTactil(this.sys.game) ? OFFSET_PAUSA_TACTIL : 0);
+    this.barrio = this.add.container(this.scale.width - MARGEN - this.barrioW, MARGEN).setDepth(DEPTH_PANEL);
     const bg = this.panel(this.add.graphics(), PANEL_W, h);
     const titulo = this.texto(12, 8, 'Barrio protegido', 15, { color: PALETTE.celeste });
     this.pctText = this.texto(PANEL_W - 12, 8, '0%', 16).setOrigin(1, 0);
@@ -210,8 +213,8 @@ export class HUDScene extends Phaser.Scene {
     this.barraValor = this.estado.progreso || 0; // valor animado 0..1
     this.dibujarBarra(this.barraValor);
 
-    this.zonaText = this.texto(12, h - 20, '', 12, { bold: false, color: PALETTE.celeste }).setOrigin(0, 0);
-    this.tiempoText = this.texto(PANEL_W - 12, h - 20, '00:00', 12, { color: PALETTE.blanco }).setOrigin(1, 0);
+    this.zonaText = this.texto(12, h - 21, '', 13, { bold: false, color: PALETTE.celeste }).setOrigin(0, 0);
+    this.tiempoText = this.texto(PANEL_W - 12, h - 21, '00:00', 13, { color: PALETTE.blanco }).setOrigin(1, 0);
     this.barrio.add([bg, titulo, this.pctText, fondo, this.barraFill, this.zonaText, this.tiempoText]);
   }
 

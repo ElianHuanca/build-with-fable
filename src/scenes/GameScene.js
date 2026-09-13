@@ -3,6 +3,7 @@ import { Player } from '../objects/Player.js';
 import { Criadero } from '../objects/Criadero.js';
 import { Joystick } from '../systems/Joystick.js';
 import { InteractionPrompt } from '../systems/InteractionPrompt.js';
+import { TouchControls, PauseMenu } from '../systems/TouchControls.js';
 import { buildLevel, zoneAt } from '../systems/LevelLoader.js';
 import { ScoreManager } from '../systems/ScoreManager.js';
 import { MissionManager } from '../systems/MissionManager.js';
@@ -10,6 +11,7 @@ import { saveSystem } from '../systems/SaveSystem.js';
 import { AudioManager } from '../systems/AudioManager.js';
 import { PALETTE } from '../data/palette.js';
 import { FACTS } from '../data/facts.js';
+import { esModoTactil } from '../data/ui.js';
 import { getLevel, LEVELS } from '../data/levels.js';
 
 const FOTO_SIZE = 256;
@@ -23,7 +25,8 @@ const FOTO_DESPUES = 'foto_despues';
  * Escribe en registry (lee HUDScene): puntos, estrellas, limpios, total, progreso, zona, misiones, tiempo.
  * Escucha en this.events: 'sfx' (AudioManager.bind), 'foto:antes' / 'foto:despues' (EliminationFX),
  *   'popup:cerrado' (Popup), 'nivel:continuar' / 'nivel:foto' (LevelEnd), 'foto:cerrar' (Photo).
- * Lanza en paralelo: HUD, Popup, LevelEnd, Photo. Esc → Menu.
+ * Lanza en paralelo: HUD, Popup, LevelEnd, Photo. Esc → menú de pausa (PauseMenu).
+ * En modo táctil (esModoTactil) añade el joystick fijo y los botones de TouchControls.
  */
 export class GameScene extends Phaser.Scene {
   constructor() { super('Game'); }
@@ -46,7 +49,8 @@ export class GameScene extends Phaser.Scene {
 
     this.cameras.main.setBounds(0, 0, level.widthPx, level.heightPx).startFollow(this.player, true, 0.12, 0.12);
 
-    this.joystick = new Joystick(this);
+    this.tactil = esModoTactil(this.sys.game);
+    this.joystick = new Joystick(this, { modo: this.tactil ? 'fijo' : 'flotante' });
 
     // Criaderos
     this.criaderos = (data.criaderos || []).map((c) => new Criadero(this, c.x, c.y, c.type));
@@ -56,8 +60,12 @@ export class GameScene extends Phaser.Scene {
     this.limpios = 0;
     this.terminado = false;
 
-    this.prompt = new InteractionPrompt(this);
+    this.prompt = new InteractionPrompt(this, { sinBoton: this.tactil });
     this.prompt.onPress(() => this.intentarLimpiar());
+    this.pausa = new PauseMenu(this, { onSalir: () => this.salirAlMenu() });
+    this.touch = this.tactil
+      ? new TouchControls(this, { onAccion: () => this.intentarLimpiar(), onPausa: () => this.togglePausa() })
+      : null;
     this.keyE = this.input.keyboard.addKey('E');
     this.keyEsc = this.input.keyboard.addKey('ESC');
 
@@ -106,10 +114,19 @@ export class GameScene extends Phaser.Scene {
       offs.forEach((off) => off());
       AudioManager.stopMusic();
       this.prompt?.destroy();
+      this.touch?.destroy();
+      this.pausa?.destroy();
     });
   }
 
   update() {
+    if (Phaser.Input.Keyboard.JustDown(this.keyEsc)) this.togglePausa();
+    if (this.pausa.abierta) {
+      // Pausa suave: el reloj no avanza y el jugador no se mueve; el resto de la escena sigue viva.
+      this.tiempoInicio += this.game.loop.delta;
+      this.joystick.update();
+      return;
+    }
     this.player.move(this.joystick.update());
 
     const zone = zoneAt(this.zones, this.player.x, this.player.y);
@@ -127,8 +144,28 @@ export class GameScene extends Phaser.Scene {
 
     this.actualizarDeteccion();
 
+    this.touch?.update({ activo: this.activo, limpiando: this.limpiando });
+
     if (Phaser.Input.Keyboard.JustDown(this.keyE)) this.intentarLimpiar();
-    if (Phaser.Input.Keyboard.JustDown(this.keyEsc) && !this.limpiando) this.salirAlMenu();
+  }
+
+  /** Esc o botón PAUSA: abre/cierra el menú de pausa (no durante la limpieza ni al terminar). */
+  togglePausa() {
+    if (this.pausa.abierta) { this.pausa.cerrar(); return; }
+    if (this.limpiando || this.terminado) return;
+    this.pausa.abrir();
+  }
+
+  /** Criadero no limpio más cercano al jugador (sin límite de distancia) o null. */
+  criaderoMasCercano() {
+    const { x, y } = this.player.body.center;
+    let nearest = null, best = Infinity;
+    for (const c of this.criaderos) {
+      if (c.state === 'limpio') continue;
+      const d = Phaser.Math.Distance.Between(x, y, c.x, c.y);
+      if (d < best) { best = d; nearest = c; }
+    }
+    return nearest;
   }
 
   /** Busca el criadero no limpio más cercano dentro del radio de detección y actualiza el activo. */
@@ -157,7 +194,7 @@ export class GameScene extends Phaser.Scene {
 
   async intentarLimpiar() {
     const c = this.activo;
-    if (!c || this.limpiando || this.terminado || c.state === 'limpiando' || c.state === 'limpio') return;
+    if (!c || this.limpiando || this.terminado || this.pausa.abierta || c.state === 'limpiando' || c.state === 'limpio') return;
     this.limpiando = true;
 
     // Bloquear al jugador durante la animación.
@@ -232,6 +269,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   salirAlMenu() {
+    this.pausa?.cerrar();
     AudioManager.stopMusic();
     this.scene.stop('HUD');
     this.scene.start('Menu');
@@ -252,8 +290,8 @@ export class GameScene extends Phaser.Scene {
       const hud = this.scene.get('HUD');
       const hudVisible = !!hud?.sys?.settings?.visible;
       if (hudVisible) hud.sys.setVisible(false);
-      const overlays = [this.prompt?.container, this.prompt?.worldLabel, this.joystick?.base, this.joystick?.knob]
-        .filter((o) => o && o.visible);
+      const overlays = [this.prompt?.container, this.prompt?.worldLabel, this.joystick?.base, this.joystick?.knob,
+        ...(this.touch?.overlays() || [])].filter((o) => o && o.visible);
       overlays.forEach((o) => o.setVisible(false));
       let done = false;
       const finish = () => {

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
+import { touchSize } from '../data/ui.js';
 
 const FONT = 'Arial, sans-serif';
 const SONIDO_KEY = 'dengue.sonido';
@@ -10,17 +11,16 @@ const PROGRESO_KEY = 'dengue.progreso';
  * `scene.events.emit('sfx')` solo llega al AudioManager si fue enlazado a ESA escena
  * (AudioManager.bind(scene)), por eso las escenas de menú emiten en `game.events`:
  *   this.game.events.emit('sfx', 'click')
- * Contrato: AudioManager debe escuchar también `game.events.on('sfx', name => play(name))`.
- * Además, se importa AudioManager de forma dinámica y, si existe, se llama a play() directo
- * como respaldo, así el click suena aunque el listener global no esté registrado.
+ * Contrato: AudioManager.init (llamado en BootScene.create, antes del menú) registra
+ * `game.events.on('sfx', name => play(name))`. Única vía: no llamar a play() directo,
+ * para no reproducir el click dos veces.
  */
 export function sfx(scene, name = 'click') {
   scene.game.events.emit('sfx', name);
-  cargarAudio().then((am) => { if (am && typeof am.play === 'function') am.play(name); });
 }
 
 let audioPromise = null;
-/** Carga perezosa del AudioManager (tolera que el módulo no exista). */
+/** Carga perezosa del AudioManager (tolera que el módulo no exista). Usado por escribirSonido. */
 function cargarAudio() {
   if (!audioPromise) {
     audioPromise = import('../systems/AudioManager.js')
@@ -80,7 +80,7 @@ export function makeButton(scene, o) {
     c.add(img);
   }
 
-  c.setSize(w, h);
+  c.setSize(...touchSize(w, h)); // área táctil ≥ MIN_TOUCH aunque el dibujo sea menor
   if (!disabled) {
     c.setInteractive({ useHandCursor: true })
       .on('pointerover', () => { draw(colorHover); scene.tweens.add({ targets: c, scale: 1.04, duration: 100 }); })
@@ -153,14 +153,14 @@ export class MenuScene extends Phaser.Scene {
     });
 
     // CRÉDITOS / CONFIGURACIÓN
-    const smallY = H * 0.56 + 62;
+    const smallY = H * 0.56 + 66;
     makeButton(this, {
-      x: W / 2 - 112, y: smallY, w: 200, h: 44, label: 'CRÉDITOS', fontSize: 16,
+      x: W / 2 - 112, y: smallY, w: 200, h: 48, label: 'CRÉDITOS', fontSize: 16,
       color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_book',
       onClick: () => this.abrirCreditos(),
     });
     makeButton(this, {
-      x: W / 2 + 112, y: smallY, w: 200, h: 44, label: 'CONFIGURACIÓN', fontSize: 16,
+      x: W / 2 + 112, y: smallY, w: 200, h: 48, label: 'CONFIGURACIÓN', fontSize: 16,
       color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_gear',
       onClick: () => this.abrirConfiguracion(),
     });

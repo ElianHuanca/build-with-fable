@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
+import { touchSize } from '../data/ui.js';
 
 const FONT = 'Arial, sans-serif';
 const ROJO = '#e74c3c';
@@ -60,7 +61,7 @@ export class PhotoScene extends Phaser.Scene {
       cg.fillStyle(hex(PALETTE.marino), 1).fillCircle(0, 4, 4);
     };
     drawCam(PALETTE.blanco);
-    cam.add(cg).setSize(68, 68).setInteractive({ useHandCursor: true })
+    cam.add(cg).setSize(...touchSize(80, 80)).setInteractive({ useHandCursor: true })
       .on('pointerover', () => drawCam(PALETTE.celeste))
       .on('pointerout', () => drawCam(PALETTE.blanco))
       .on('pointerdown', () => this.download());
@@ -69,8 +70,8 @@ export class PhotoScene extends Phaser.Scene {
       fontFamily: FONT, fontSize: 15, fontStyle: 'bold', color: PALETTE.amarillo,
     }).setOrigin(0.5);
 
-    this.add.existing(this.makeButton(cx - 150, H - 50, 180, 46, 'Volver', PALETTE.grisClaro, PALETTE.gris, () => this.close()));
-    this.add.existing(this.makeButton(cx + 150, H - 50, 180, 46, 'Compartir', PALETTE.azulGorra, PALETTE.azulGorraOscuro, () => this.share()));
+    this.add.existing(this.makeButton(cx - 150, H - 50, 190, 52, 'Volver', PALETTE.grisClaro, PALETTE.gris, () => this.close()));
+    this.add.existing(this.makeButton(cx + 150, H - 50, 190, 52, 'Compartir', PALETTE.azulGorra, PALETTE.azulGorraOscuro, () => this.share()));
 
     this.input.keyboard?.on('keydown-ESC', () => this.close());
   }
@@ -110,7 +111,7 @@ export class PhotoScene extends Phaser.Scene {
     const t = this.add.text(0, 0, label, {
       fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5);
-    c.add([g, t]).setSize(w, h).setInteractive({ useHandCursor: true })
+    c.add([g, t]).setSize(...touchSize(w, h)).setInteractive({ useHandCursor: true })
       .on('pointerover', () => draw(hover))
       .on('pointerout', () => draw(color))
       .on('pointerdown', cb);
@@ -174,11 +175,11 @@ export class PhotoScene extends Phaser.Scene {
     const onLoad = () => {
       const overlay = this.add.container(0, 0).setDepth(50);
       const dim = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.85).setInteractive();
-      const im = this.add.image(W / 2, H / 2 - 20, key);
-      const s = Math.min((W - 60) / im.width, (H - 120) / im.height, 1.5);
+      const im = this.add.image(W / 2, H / 2 - 30, key);
+      const s = Math.min((W - 60) / im.width, (H - 130) / im.height, 1.5);
       im.setScale(s);
-      const t = this.add.text(W / 2, H - 46, 'Mantén presionado para guardar  ·  toca fuera para cerrar', {
-        fontFamily: FONT, fontSize: 16, fontStyle: 'bold', color: PALETTE.amarillo,
+      const t = this.add.text(W / 2, H - 40, 'Mantén presionado para guardar  ·  toca fuera para cerrar', {
+        fontFamily: FONT, fontSize: 18, fontStyle: 'bold', color: PALETTE.amarillo,
       }).setOrigin(0.5);
       overlay.add([dim, im, t]);
       dim.on('pointerdown', () => { overlay.destroy(); this.textures.remove(key); });
@@ -193,7 +194,7 @@ export class PhotoScene extends Phaser.Scene {
         Object.assign(el.style, {
           position: 'fixed', zIndex: 1000, pointerEvents: 'auto',
           left: `${rect.left + (W / 2 - (im.width * s) / 2) * sx}px`,
-          top: `${rect.top + (H / 2 - 20 - (im.height * s) / 2) * sy}px`,
+          top: `${rect.top + (H / 2 - 30 - (im.height * s) / 2) * sy}px`,
           width: `${im.width * s * sx}px`, height: `${im.height * s * sy}px`,
         });
         document.body.appendChild(el);

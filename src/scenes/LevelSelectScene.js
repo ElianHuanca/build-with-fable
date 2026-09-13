@@ -68,7 +68,7 @@ export class LevelSelectScene extends Phaser.Scene {
 
     // Volver
     makeButton(this, {
-      x: 90, y: H - 40, w: 150, h: 46, label: '◀ Volver', fontSize: 18,
+      x: 90, y: H - 40, w: 150, h: 50, label: '◀ Volver', fontSize: 18,
       color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro,
       onClick: () => this.scene.start('Menu'),
     });

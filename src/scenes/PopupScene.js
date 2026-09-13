@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { FACTS } from '../data/facts.js';
+import { touchSize } from '../data/ui.js';
 
 const CARD_W = 560;
 const CARD_H = 300;
@@ -68,16 +69,16 @@ export class PopupScene extends Phaser.Scene {
 
     y = this.addRichText(this.fact.dato, tx, y, textW, 17, PALETTE.marino) + 8;
     const consejo = this.add.text(tx, y, this.fact.consejo, {
-      fontFamily: FONT, fontSize: 14, color: PALETTE.gris, wordWrap: { width: textW },
+      fontFamily: FONT, fontSize: 15, color: PALETTE.gris, wordWrap: { width: textW },
     });
     this.card.add(consejo);
     y += consejo.height + 6;
     this.card.add(this.add.text(tx, y, `Fuente: ${this.fact.fuente}`, {
-      fontFamily: FONT, fontSize: 12, color: PALETTE.grisClaro,
+      fontFamily: FONT, fontSize: 13, color: PALETTE.grisClaro,
     }));
 
     // Botón ¡Genial!
-    this.card.add(this.makeButton(0, CARD_H / 2 - 40, 200, 44, '¡Genial!', PALETTE.verde, PALETTE.verdeOscuro, () => this.close()));
+    this.card.add(this.makeButton(0, CARD_H / 2 - 40, 220, 52, '¡Genial!', PALETTE.verde, PALETTE.verdeOscuro, () => this.close()));
 
     // Botón X
     const xBtn = this.add.container(CARD_W / 2 - 6, -CARD_H / 2 + 6);
@@ -87,7 +88,7 @@ export class PopupScene extends Phaser.Scene {
     xg.lineStyle(3, hex(PALETTE.blanco), 1);
     xg.lineBetween(-6, -6, 6, 6).lineBetween(-6, 6, 6, -6);
     xBtn.add(xg);
-    xBtn.setSize(40, 40).setInteractive({ useHandCursor: true })
+    xBtn.setSize(...touchSize(40, 40)).setInteractive({ useHandCursor: true })
       .on('pointerover', () => xBtn.setScale(1.1))
       .on('pointerout', () => xBtn.setScale(1))
       .on('pointerdown', () => this.close());
@@ -131,7 +132,7 @@ export class PopupScene extends Phaser.Scene {
     const t = this.add.text(0, 0, label, {
       fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5);
-    c.add([g, t]).setSize(w, h).setInteractive({ useHandCursor: true })
+    c.add([g, t]).setSize(...touchSize(w, h)).setInteractive({ useHandCursor: true })
       .on('pointerover', () => draw(hover))
       .on('pointerout', () => draw(color))
       .on('pointerdown', cb);
