@@ -991,3 +991,260 @@ async function buildMenu() {
 await buildUI2();
 await buildMenu();
 console.log('UI y menú generados');
+
+// ============================================================================
+// v3: especies de mosquito, rociador, ciclo de vida, insignias, íconos, niebla
+// ============================================================================
+
+// Rasgos por especie (vista dorsal). Colores planos, contorno P.linea.
+const ESPECIES_V3 = {
+  aegypti:    { cuerpo: '#23282e', torax: '#2c3238', rayas: true, lira: true,  linea: false, anillos: true,  manchas: false, tilt: 0,   escala: 1 },
+  albopictus: { cuerpo: '#15191e', torax: '#1b2026', rayas: true, lira: false, linea: true,  anillos: true,  manchas: false, tilt: 0,   escala: 1 },
+  culex:      { cuerpo: '#b08a5a', torax: '#c39a66', rayas: false, lira: false, linea: false, anillos: false, manchas: false, tilt: 0,   escala: 1.08 },
+  anopheles:  { cuerpo: '#6b5238', torax: '#7a5f42', rayas: false, lira: false, linea: false, anillos: false, manchas: true,  tilt: -38, escala: 1 },
+};
+
+// Ilustración de ficha 128×128: cabeza arriba, abdomen abajo, alas a los lados.
+function especieSVG(id) {
+  const e = ESPECIES_V3[id];
+  const o = O2(2);
+  const g = [];
+  const legLine = `fill="none" stroke="${P.linea}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"`;
+  const ringLine = `fill="none" stroke="${P.blanco}" stroke-width="1.7" stroke-linecap="butt" stroke-dasharray="3.5 4.5" stroke-dashoffset="2"`;
+  // Patas (3 pares), simétricas
+  const legs = [
+    'M52 50 l-16 -12 l-6 -18', 'M76 50 l16 -12 l6 -18',           // delanteras
+    'M50 58 l-22 4 l-10 16',   'M78 58 l22 4 l10 16',             // medias
+    'M52 66 l-14 20 l-2 22',   'M76 66 l14 20 l2 22',             // traseras
+  ];
+  for (const d of legs) g.push(`<path d="${d}" ${legLine}/>`);
+  if (e.anillos) for (const d of legs) g.push(`<path d="${d}" ${ringLine}/>`);
+
+  // Alas celestes translúcidas
+  const wing = (sx) => {
+    const cx = 64 + sx * 27, cy = 82;
+    let s = `<ellipse cx="${cx}" cy="${cy}" rx="9.5" ry="30" fill="${P.celeste}" fill-opacity="0.62" ${o} transform="rotate(${sx * 22} ${cx} ${cy})"/>`;
+    s += `<path d="M${cx} ${cy - 26} v52" stroke="${P.blanco}" stroke-width="1.4" opacity="0.6" transform="rotate(${sx * 22} ${cx} ${cy})"/>`;
+    if (e.manchas) {
+      // Manchas claras y oscuras a lo largo del ala (Anopheles)
+      const spots = [[-3, -20, '#3d2c1c'], [3, -12, '#f6e7c9'], [-2, -3, '#3d2c1c'], [3, 6, '#f6e7c9'], [-3, 14, '#3d2c1c'], [2, 22, '#f6e7c9']];
+      for (const [dx, dy, c] of spots) s += `<ellipse cx="${cx + dx}" cy="${cy + dy}" rx="4.2" ry="3" fill="${c}" opacity="0.95" transform="rotate(${sx * 22} ${cx} ${cy})"/>`;
+    }
+    return s;
+  };
+  g.push(wing(-1), wing(1));
+
+  // Abdomen (afinado hacia abajo) con segmentos
+  g.push(`<path d="M55 62 q9 -4 18 0 l3 14 q-3 22 -12 38 q-9 -16 -12 -38 z" fill="${e.cuerpo}" ${o}/>`);
+  const segY = [70, 79, 88, 97, 105];
+  for (const y of segY) {
+    const halfW = 11 - (y - 62) * 0.19;
+    g.push(`<path d="M${64 - halfW} ${y} h${halfW * 2}" stroke="${P.linea}" stroke-width="1.6"/>`);
+    if (e.rayas) g.push(`<path d="M${64 - halfW + 0.8} ${y + 2.2} h${halfW * 2 - 1.6}" stroke="${P.blanco}" stroke-width="2.6"/>`);
+  }
+  // Tórax
+  g.push(`<ellipse cx="64" cy="52" rx="14" ry="13" fill="${e.torax}" ${o}/>`);
+  if (e.lira) {
+    // Lira blanca: dos curvas laterales + dos líneas centrales
+    g.push(`<path d="M55 42 q-6 10 0 20" fill="none" stroke="${P.blanco}" stroke-width="3" stroke-linecap="round"/>`);
+    g.push(`<path d="M73 42 q6 10 0 20" fill="none" stroke="${P.blanco}" stroke-width="3" stroke-linecap="round"/>`);
+    g.push(`<path d="M61 45 v15 M67 45 v15" stroke="${P.blanco}" stroke-width="2" stroke-linecap="round"/>`);
+  }
+  if (e.linea) g.push(`<path d="M64 41 v22" stroke="${P.blanco}" stroke-width="3" stroke-linecap="round"/>`);
+  if (e.rayas && e.anillos) {
+    // Puntos blancos en los lados del tórax (Aedes)
+    g.push(`<circle cx="52" cy="54" r="1.8" fill="${P.blanco}"/><circle cx="76" cy="54" r="1.8" fill="${P.blanco}"/>`);
+  }
+  // Cabeza con ojos grandes
+  g.push(`<circle cx="64" cy="33" r="10.5" fill="${e.torax}" ${o}/>`);
+  g.push(`<circle cx="58" cy="32" r="5.6" fill="${P.blanco}" ${o}/>`);
+  g.push(`<circle cx="70" cy="32" r="5.6" fill="${P.blanco}" ${o}/>`);
+  g.push(`<circle cx="58.5" cy="31" r="2.8" fill="${P.linea}"/><circle cx="70.5" cy="31" r="2.8" fill="${P.linea}"/>`);
+  g.push(`<circle cx="57.5" cy="30" r="0.9" fill="${P.blanco}"/><circle cx="69.5" cy="30" r="0.9" fill="${P.blanco}"/>`);
+  // Antenas
+  g.push(`<path d="M59 25 q-4 -6 -9 -8 M69 25 q4 -6 9 -8" fill="none" stroke="${P.linea}" stroke-width="1.8" stroke-linecap="round"/>`);
+  // Probóscide (y palpos largos en Anopheles)
+  if (e.manchas) g.push(`<path d="M61 24 l-3 -17 M67 24 l3 -17" fill="none" stroke="${P.linea}" stroke-width="2.2" stroke-linecap="round"/>`);
+  g.push(`<path d="M64 24 v-18" fill="none" stroke="${P.linea}" stroke-width="4.6" stroke-linecap="round"/>`);
+  g.push(`<path d="M64 24 v-18" fill="none" stroke="#8a9096" stroke-width="2" stroke-linecap="round"/>`);
+
+  const body = `<g transform="translate(64 64) scale(${e.escala}) rotate(${e.tilt}) translate(-64 -64)">${g.join('')}</g>`;
+  return svg(128, 128, body);
+}
+
+// Versión mini 24×24 para enjambres: silueta reconocible por color y rayas.
+function especieMiniSVG(id) {
+  const e = ESPECIES_V3[id];
+  const g = [];
+  g.push(`<path d="M9 8 l-5 -4 M15 8 l5 -4 M8 12 l-6 1 M16 12 l6 1 M9 15 l-4 6 M15 15 l4 6" fill="none" stroke="${P.linea}" stroke-width="1.4" stroke-linecap="round"/>`);
+  g.push(`<ellipse cx="7" cy="14" rx="3" ry="7" fill="${P.celeste}" opacity="0.75" transform="rotate(-22 7 14)"/>`);
+  g.push(`<ellipse cx="17" cy="14" rx="3" ry="7" fill="${P.celeste}" opacity="0.75" transform="rotate(22 17 14)"/>`);
+  if (e.manchas) {
+    g.push(`<circle cx="6.5" cy="12" r="1.1" fill="#3d2c1c"/><circle cx="17.5" cy="12" r="1.1" fill="#3d2c1c"/><circle cx="7.5" cy="17" r="1.1" fill="#3d2c1c"/><circle cx="16.5" cy="17" r="1.1" fill="#3d2c1c"/>`);
+  }
+  g.push(`<path d="M9.5 11 h5 l-0.5 4 q-2 7 -2 7 q-2 -7 -2 -7 z" fill="${e.cuerpo}" stroke="${P.linea}" stroke-width="1.2" stroke-linejoin="round"/>`);
+  if (e.rayas) g.push(`<path d="M9.8 14 h4.4 M10.4 17.5 h3.2" stroke="${P.blanco}" stroke-width="1.2"/>`);
+  g.push(`<ellipse cx="12" cy="9.5" rx="3.6" ry="3.2" fill="${e.torax}" stroke="${P.linea}" stroke-width="1.2"/>`);
+  if (e.lira) g.push(`<path d="M10.2 7.8 q-1 1.7 0 3.4 M13.8 7.8 q1 1.7 0 3.4" fill="none" stroke="${P.blanco}" stroke-width="1"/>`);
+  if (e.linea) g.push(`<path d="M12 7 v5" stroke="${P.blanco}" stroke-width="1.2"/>`);
+  g.push(`<circle cx="12" cy="5" r="2.6" fill="${e.torax}" stroke="${P.linea}" stroke-width="1.2"/>`);
+  g.push(`<circle cx="10.8" cy="4.6" r="1" fill="${P.blanco}"/><circle cx="13.2" cy="4.6" r="1" fill="${P.blanco}"/>`);
+  g.push(`<path d="M12 2.6 v-2" stroke="${P.linea}" stroke-width="1.4" stroke-linecap="round"/>`);
+  const body = e.tilt ? `<g transform="rotate(${e.tilt} 12 12)">${g.join('')}</g>` : g.join('');
+  return svg(24, 24, body);
+}
+
+// Rociador de mano 40×24 (apunta a la derecha)
+function rociadorSVG() {
+  const o = O2(1.6);
+  return svg(40, 24, `
+    <path d="M4 20 q-2 -9 5 -12" fill="none" stroke="${P.linea}" stroke-width="4" stroke-linecap="round"/>
+    <path d="M4 20 q-2 -9 5 -12" fill="none" stroke="${P.grisClaro}" stroke-width="2" stroke-linecap="round"/>
+    <rect x="7" y="7" width="20" height="12" rx="4" fill="${P.gris}" ${o}/>
+    <rect x="10" y="9" width="10" height="3" rx="1.5" fill="${P.grisClaro}" stroke="none"/>
+    <rect x="12" y="17" width="8" height="6" rx="2" fill="${P.marino}" ${o}/>
+    <rect x="26" y="9" width="6" height="8" rx="1.5" fill="${P.grisClaro}" ${o}/>
+    <path d="M31 10 h6 a2 2 0 0 1 2 2 v2 a2 2 0 0 1 -2 2 h-6 z" fill="${P.teja}" ${o}/>
+    <circle cx="37" cy="13" r="1" fill="${P.linea}"/>
+  `);
+}
+
+// Ciclo de vida: 4 íconos 64×64 sobre fondo circular celeste
+function cicloSVG(etapa) {
+  const o = O2(1.6);
+  const fondo = `<circle cx="32" cy="32" r="29" fill="${P.celeste}" stroke="${P.linea}" stroke-width="2.4"/>`;
+  let body = '';
+  const agua = `<path d="M6 38 q6 -4 13 0 t13 0 t13 0 t13 0 v24 h-52 z" fill="${P.aguaSucia}" opacity="0.85"/><path d="M6 38 q6 -4 13 0 t13 0 t13 0 t13 0" fill="none" stroke="${P.blanco}" stroke-width="1.8" opacity="0.7"/>`;
+  switch (etapa) {
+    case 'huevo': {
+      const eggs = [[22, 33], [29, 30], [36, 30], [43, 33], [26, 38], [33, 36], [40, 38]];
+      body = agua + eggs.map(([x, y]) => `<ellipse cx="${x}" cy="${y}" rx="3.2" ry="4.6" fill="#15191e" ${o}/>`).join('');
+      break;
+    }
+    case 'larva':
+      body = agua +
+        `<path d="M32 36 q0 8 -4 14 q-3 4 -8 2" fill="none" stroke="${P.linea}" stroke-width="9" stroke-linecap="round"/>` +
+        `<path d="M32 36 q0 8 -4 14 q-3 4 -8 2" fill="none" stroke="#c9b27a" stroke-width="6" stroke-linecap="round"/>` +
+        `<path d="M32 34 v-6" stroke="${P.linea}" stroke-width="3" stroke-linecap="round"/>` +
+        `<path d="M30 41 h4 M28 46 h4 M25 51 h4" stroke="${P.linea}" stroke-width="1.4" stroke-linecap="round"/>` +
+        `<circle cx="20" cy="52" r="1.4" fill="${P.linea}"/>`;
+      break;
+    case 'pupa':
+      body = agua +
+        `<path d="M30 30 a10 10 0 1 1 10 12 q-4 2 -6 10 q-2 6 -8 6" fill="none" stroke="${P.linea}" stroke-width="10" stroke-linecap="round"/>` +
+        `<path d="M30 30 a10 10 0 1 1 10 12 q-4 2 -6 10 q-2 6 -8 6" fill="none" stroke="#b39a62" stroke-width="7" stroke-linecap="round"/>` +
+        `<circle cx="36" cy="35" r="7.5" fill="#c9b27a" ${o}/>` +
+        `<path d="M32 28 l-3 -6 M40 28 l3 -6" stroke="${P.linea}" stroke-width="2" stroke-linecap="round"/>` +
+        `<circle cx="34" cy="34" r="1.6" fill="${P.linea}"/>`;
+      break;
+    case 'adulto':
+      body = `<g transform="translate(32 34) scale(0.36) translate(-64 -64)">${especieSVG('aegypti').replace(/^<svg[^>]*>|<\/svg>$/g, '')}</g>`;
+      break;
+  }
+  return svg(64, 64, `<clipPath id="cc"><circle cx="32" cy="32" r="28"/></clipPath>${fondo}<g clip-path="url(#cc)">${body}</g><circle cx="32" cy="32" r="29" fill="none" stroke="${P.linea}" stroke-width="2.4"/>`);
+}
+
+// Insignias 64×64: medalla dorada con cinta marina y símbolo blanco
+function insigniaSVG(tipo) {
+  const bloqueada = tipo === 'bloqueada';
+  const oro = bloqueada ? '#9aa0a6' : P.amarillo;
+  const borde = bloqueada ? '#5f656b' : '#d99a1a';
+  const cinta = bloqueada ? '#6a7077' : P.marino;
+  const W3 = `fill="none" stroke="${P.blanco}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"`;
+  let sym = '';
+  switch (tipo) {
+    case 'explorador': // brújula
+      sym = `<circle cx="32" cy="28" r="10" ${W3}/><path d="M36 24 l-2.5 6.5 l-6.5 2.5 l2.5 -6.5 z" fill="${P.blanco}"/><path d="M32 16 v2 M32 38 v2 M20 28 h2 M42 28 h2" ${W3}/>`;
+      break;
+    case 'detective': // lupa
+      sym = `<circle cx="29" cy="25" r="8" ${W3}/><path d="M35 31 l7 7" stroke="${P.blanco}" stroke-width="4.5" stroke-linecap="round"/>`;
+      break;
+    case 'guardian': // escudo
+      sym = `<path d="M32 16 l11 4 v9 c0 7 -5 11 -11 13 c-6 -2 -11 -6 -11 -13 v-9 z" fill="${P.blanco}"/><path d="M27 28 l3.5 3.5 l7 -7" fill="none" stroke="${oro}" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"/>`;
+      break;
+    case 'fotografo': // cámara
+      sym = `<path d="M27 20 l2 -3 h6 l2 3 h4 a2 2 0 0 1 2 2 v11 a2 2 0 0 1 -2 2 h-18 a2 2 0 0 1 -2 -2 v-11 a2 2 0 0 1 2 -2 z" ${W3}/><circle cx="32" cy="27.5" r="4" ${W3}/>`;
+      break;
+    default: // candado
+      sym = `<rect x="25" y="26" width="14" height="11" rx="2" fill="${P.blanco}"/><path d="M27.5 26 v-4 a4.5 4.5 0 0 1 9 0 v4" ${W3}/>`;
+  }
+  return svg(64, 64, `
+    <path d="M22 40 l-4 20 l8 -4 l6 6 l4 -16 z" fill="${cinta}" ${O2(1.6)}/>
+    <path d="M42 40 l4 20 l-8 -4 l-6 6 l-4 -16 z" fill="${cinta}" ${O2(1.6)}/>
+    <circle cx="32" cy="28" r="22" fill="${borde}" ${O2(1.6)}/>
+    <circle cx="32" cy="28" r="17" fill="${oro}" stroke="${bloqueada ? '#7a8188' : '#ffe27a'}" stroke-width="1.6"/>
+    ${sym}
+  `);
+}
+
+// Íconos blancos v3
+const W3b = `fill="none" stroke="${P.blanco}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"`;
+function iconCameraBigSVG() {
+  return svg(56, 56, `
+    <path d="M20 16 l4 -6 h8 l4 6 h9 a4 4 0 0 1 4 4 v20 a4 4 0 0 1 -4 4 h-34 a4 4 0 0 1 -4 -4 v-20 a4 4 0 0 1 4 -4 z" ${W3b}/>
+    <circle cx="28" cy="29" r="8" ${W3b}/><circle cx="28" cy="29" r="3" fill="${P.blanco}"/>
+    <circle cx="43" cy="22" r="1.8" fill="${P.blanco}"/>
+  `);
+}
+function iconLibrarySVG() {
+  return svg(40, 40, `
+    <path d="M20 12 c-3 -3 -8 -3 -13 -2 v21 c5 -1 10 -1 13 2 c3 -3 8 -3 13 -2 v-21 c-5 -1 -10 -1 -13 2 z" fill="${P.blanco}" fill-opacity="0.18" stroke="${P.blanco}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M20 12 v21" ${W3b}/>
+    <path d="M11 16 h5 M11 21 h5 M11 26 h4 M24 16 h5 M24 21 h5 M24 26 h4" stroke="${P.blanco}" stroke-width="2" stroke-linecap="round"/>
+  `);
+}
+function iconLangSVG() {
+  return svg(40, 40, `
+    <circle cx="20" cy="20" r="14" ${W3b}/>
+    <ellipse cx="20" cy="20" rx="6" ry="14" ${W3b}/>
+    <path d="M6 20 h28 M8 13 h24 M8 27 h24" stroke="${P.blanco}" stroke-width="2" stroke-linecap="round"/>
+    <circle cx="29" cy="29" r="9" fill="${P.marino}" stroke="${P.blanco}" stroke-width="2.4"/>
+    <text x="29" y="33.5" text-anchor="middle" font-family="Arial, Helvetica, 'DejaVu Sans', sans-serif" font-weight="bold" font-size="12" fill="${P.blanco}">A</text>
+  `);
+}
+const WT = `fill="none" stroke="${P.blanco}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"`;
+const TABS = {
+  mosquito: `<ellipse cx="9" cy="19" rx="3.2" ry="8" fill="${P.blanco}" fill-opacity="0.45" transform="rotate(-20 9 19)"/><ellipse cx="23" cy="19" rx="3.2" ry="8" fill="${P.blanco}" fill-opacity="0.45" transform="rotate(20 23 19)"/><path d="M13 13 l-7 -5 M19 13 l7 -5 M13 18 l-7 8 M19 18 l7 8" ${WT}/><path d="M13 14 h6 l-0.5 4 q-2.5 11 -2.5 11 q-2.5 -11 -2.5 -11 z" fill="${P.blanco}"/><circle cx="16" cy="12" r="4.2" fill="${P.blanco}"/><circle cx="16" cy="6.5" r="3" fill="${P.blanco}"/><path d="M16 3.5 v-2.5" ${WT}/>`,
+  ciclo: `<path d="M24 12 a9 9 0 1 0 2 8" ${WT}/><path d="M26 6 v7 h-7" ${WT}/><path d="M6 20 a9 9 0 1 0 2 -8" ${WT} opacity="0"/>`,
+  sintomas: `<rect x="12" y="4" width="8" height="18" rx="4" ${WT}/><circle cx="16" cy="24" r="4.5" fill="${P.blanco}"/><rect x="14.5" y="12" width="3" height="10" fill="${P.blanco}"/><path d="M22 8 h3 M22 12 h3 M22 16 h3" ${WT}/>`,
+  prevencion: `<path d="M8 13 h16 l-2 14 h-12 z" ${WT}/><path d="M10 13 a6 6 0 0 1 12 0" ${WT}/><path d="M9 18 h14" stroke="${P.blanco}" stroke-width="1.6"/><path d="M26 6 l-4 6" ${WT}/><path d="M22 12 l-2 2 l2 2 l2 -2 z" fill="${P.blanco}" stroke="${P.blanco}" stroke-width="2.4" stroke-linejoin="round"/>`,
+  mitos: `<path d="M10 12 a6 6 0 1 1 8 5.6 c-1.5 0.6 -2 1.6 -2 3.4" fill="none" stroke="${P.blanco}" stroke-width="3.4" stroke-linecap="round"/><circle cx="16" cy="26" r="2.2" fill="${P.blanco}"/>`,
+};
+const tabSVG = (n) => svg(32, 32, TABS[n]);
+
+// Niebla difusa 48×48 (alpha radial)
+function nieblaSVG() {
+  return svg(48, 48, `
+    <defs><radialGradient id="ng" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.95"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient></defs>
+    <circle cx="24" cy="24" r="24" fill="url(#ng)"/>
+    <circle cx="17" cy="20" r="9" fill="#ffffff" opacity="0.25"/>
+    <circle cx="30" cy="27" r="8" fill="#ffffff" opacity="0.2"/>
+  `);
+}
+
+async function buildV3() {
+  const out = {};
+  for (const id of Object.keys(ESPECIES_V3)) {
+    out[`sprites/mosq_${id}`] = especieSVG(id);
+    out[`sprites/mosq_${id}_mini`] = especieMiniSVG(id);
+  }
+  out['sprites/rociador'] = rociadorSVG();
+  out['sprites/niebla'] = nieblaSVG();
+  for (const e of ['huevo', 'larva', 'pupa', 'adulto']) out[`ui/ciclo_${e}`] = cicloSVG(e);
+  for (const t of ['explorador', 'detective', 'guardian', 'fotografo', 'bloqueada']) out[`ui/insignia_${t}`] = insigniaSVG(t);
+  out['ui/icon_camera_big'] = iconCameraBigSVG();
+  out['ui/icon_library'] = iconLibrarySVG();
+  out['ui/icon_lang'] = iconLangSVG();
+  for (const t of Object.keys(TABS)) out[`ui/tab_${t}`] = tabSVG(t);
+  for (const [file, body] of Object.entries(out)) {
+    await sharp(Buffer.from(body)).png().toFile(`${OUT}/${file}.png`);
+  }
+  return Object.keys(out);
+}
+
+const v3Files = await buildV3();
+console.log('Assets v3 generados:', v3Files.length);

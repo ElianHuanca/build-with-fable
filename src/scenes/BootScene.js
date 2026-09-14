@@ -58,6 +58,18 @@ export class BootScene extends Phaser.Scene {
     for (const k of SPRITES_V2) this.load.image(k, BASE + `sprites/${k}.png`);
 
     for (const k of UI_KEYS) this.load.image(k, BASE + `ui/${k}.png`);
+    // v3: especies (biblioteca y cámara IA), rociador y niebla (fumigación), ciclo de vida,
+    // insignias, íconos y pestañas. Los genera tools/gen-assets.mjs (buildV3).
+    for (const id of ['aegypti', 'albopictus', 'culex', 'anopheles']) {
+      for (const k of [`mosq_${id}`, `mosq_${id}_mini`]) this.load.image(k, BASE + `sprites/${k}.png`);
+    }
+    for (const k of ['rociador', 'niebla']) this.load.image(k, BASE + `sprites/${k}.png`);
+    for (const k of ['ciclo_huevo', 'ciclo_larva', 'ciclo_pupa', 'ciclo_adulto',
+      'insignia_explorador', 'insignia_detective', 'insignia_guardian', 'insignia_fotografo', 'insignia_bloqueada',
+      'icon_camera_big', 'icon_library', 'icon_lang',
+      'tab_mosquito', 'tab_ciclo', 'tab_sintomas', 'tab_prevencion', 'tab_mitos']) {
+      this.load.image(k, BASE + `ui/${k}.png`);
+    }
     for (const k of IMG_KEYS) this.load.image(k, BASE + `img/${k}.png`);
 
     for (const s of SFX_FILES) this.load.audio(`sfx_${s}`, BASE + `audio/${s}.wav`);

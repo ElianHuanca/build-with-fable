@@ -22,20 +22,27 @@ const BTN = {
     lupa:     { ancla: 'br', dx: -190, dy: -130, r: 30 },
     correr:   { ancla: 'br', dx: -100, dy: -200, r: 30 },
     vehiculo: { ancla: 'br', dx: -170, dy: -60,  r: 30 },
+    // Sobre la lupa (a la izquierda de CORRER): a x ≥ 173 no pisa el joystick fijo (110, h−110).
+    camara:   { ancla: 'br', dx: -190, dy: -200, r: 30 },
   },
   horizontal: {
     accion:   { ancla: 'br', dx: -100, dy: -100, r: 46 },
     lupa:     { ancla: 'br', dx: -190, dy: -130, r: 30 },
     correr:   { ancla: 'br', dx: -200, dy: -210, r: 30 },
     vehiculo: { ancla: 'br', dx: -170, dy: -60,  r: 30 },
+    camara:   { ancla: 'br', dx: -270, dy: -180, r: 30 },
   },
 };
 const PAUSA = { ancla: 'tr', dx: -30, dy: 30, r: 22 };
 /** Radios de dibujo (iguales en ambas orientaciones). */
-const R = { accion: 46, lupa: 30, correr: 30, vehiculo: 30 };
+const R = { accion: 46, lupa: 30, correr: 30, vehiculo: 30, camara: 30 };
+/** Texturas del ícono de la cámara (tools/gen-assets.mjs), en orden de preferencia. */
+const TEX_CAMARA = ['icon_camera_big', 'icon_camera'];
 const LUPA_RECARGA_MS = 3000;
 const FLECHA_MS = 2000;
 const PRESS_SCALE = 0.92;
+/** Pulsación de ACCIÓN más corta que esto cuenta como toque (onAccion); más larga, solo mantener. */
+const TAP_MS = 250;
 
 /** Botón circular: Graphics + ícono, hit area circular ≥ MIN_TOUCH, animación de "press" y sfx click. */
 function crearBoton(scene, x, y, r, color, dibujarIcono) {
@@ -120,6 +127,18 @@ function iconoPausa(g) {
   g.fillRoundedRect(2, -9, 6, 18, 2);
 }
 
+/** Cámara de fotos (cuerpo + objetivo), fallback del botón CÁMARA cuando no hay textura. */
+function iconoCamara(g) {
+  g.fillStyle(hex(PALETTE.blanco), 1);
+  g.fillRoundedRect(-15, -9, 30, 21, 4);
+  g.fillRoundedRect(-6, -14, 12, 6, 2);
+  g.lineStyle(2, hex(PALETTE.marino), 1);
+  g.strokeRoundedRect(-15, -9, 30, 21, 4);
+  g.fillStyle(hex(PALETTE.marino), 1).fillCircle(0, 2, 6.5);
+  g.fillStyle(hex(PALETTE.celeste), 1).fillCircle(0, 2, 3.5);
+  g.fillStyle(hex(PALETTE.blanco), 0.9).fillCircle(-1.5, 0.5, 1.2);
+}
+
 /**
  * Controles táctiles estilo Brawl Stars (solo en modo táctil; ver `esModoTactil` en data/ui.js):
  *  - ACCIÓN (grande, abajo-derecha): igual que la tecla E. Estados apagado / activo (anillo
@@ -130,19 +149,27 @@ function iconoPausa(g) {
  *  - CORRER: sprint mientras se mantiene presionado (`player.setSprint`), con anillo de energía.
  *  - VEHÍCULO: sube/baja de la camioneta. Solo expone el botón y el callback; GameScene decide
  *    si el jugador está cerca del vehículo o de la estación.
+ *  - CÁMARA (sobre la lupa): abre la cámara con IA (`onCamara`; tecla C en escritorio). Ícono
+ *    'icon_camera_big' / 'icon_camera' si la textura existe, si no dibujado.
  *  - PAUSA (arriba-derecha): abre el `PauseMenu`.
  * Todo con Graphics/Text, `scrollFactor 0` (también en los hijos interactivos) y depth alto.
  */
 export class TouchControls {
   /**
    * @param {Phaser.Scene} scene GameScene (usa `player`, `criaderoMasCercano()`)
-   * @param {{ onAccion: () => void, onPausa: () => void, onVehiculo?: () => void }} opts
+   * @param {{ onAccion: () => void, onAccionInicio?: () => void, onAccionFin?: () => void,
+   *   onPausa: () => void, onVehiculo?: () => void, onCamara?: () => void }} opts
+   *   onAccionInicio: al presionar ACCIÓN; onAccionFin: al soltar (dentro o fuera del botón);
+   *   onAccion: solo si la pulsación duró < 250 ms. `update({ progreso })` dibuja el arco 0..1.
    */
   constructor(scene, opts) {
     this.scene = scene;
     this.onAccion = opts.onAccion;
+    this.onAccionInicio = opts.onAccionInicio;
+    this.onAccionFin = opts.onAccionFin;
     this.onPausa = opts.onPausa;
     this.onVehiculo = opts.onVehiculo;
+    this.onCamara = opts.onCamara;
     this.estado = 'apagado';
     this.lupaHasta = 0;
     this.flechaHasta = 0;
@@ -153,10 +180,31 @@ export class TouchControls {
     this.anillo = scene.add.circle(0, 0, R.accion, 0x000000, 0)
       .setStrokeStyle(4, hex(PALETTE.amarillo), 0.9).setScrollFactor(0).setDepth(DEPTH - 1).setVisible(false);
     this.accion = crearBoton(scene, 0, 0, R.accion, PALETTE.amarillo, iconoGota);
-    this.accion.on('pointerdown', () => { if (this.estado === 'activo') this.onAccion?.(); });
     this.anilloTween = scene.tweens.add({
       targets: this.anillo, scale: 1.45, alpha: 0, duration: 900, repeat: -1, ease: 'Sine.easeOut', paused: true,
     });
+    // Mantener presionado: onAccionInicio al bajar, onAccionFin al soltar (también fuera del botón o
+    // del lienzo) y onAccion solo si fue un toque corto (< TAP_MS).
+    this.progresoArco = scene.add.graphics().setScrollFactor(0).setDepth(DEPTH + 1);
+    this.progresoDibujado = -1;
+    this.accionPointerId = null;
+    this.accionDesde = 0;
+    this.accion.on('pointerdown', (p) => {
+      if (this.estado !== 'activo' || this.accionPointerId !== null) return;
+      this.accionPointerId = p.id;
+      this.accionDesde = scene.time.now;
+      this.onAccionInicio?.();
+    });
+    const soltarAccion = (p) => {
+      if (this.accionPointerId === null || (p && p.id !== this.accionPointerId)) return;
+      this.accionPointerId = null;
+      const corto = scene.time.now - this.accionDesde < TAP_MS;
+      this.onAccionFin?.();
+      if (corto) this.onAccion?.();
+    };
+    this.accion.on('pointerup', soltarAccion);
+    scene.input.on('pointerup', soltarAccion);
+    scene.input.on('pointerupoutside', soltarAccion);
 
     // ---- LUPA ----
     this.lupa = crearBoton(scene, 0, 0, R.lupa, PALETTE.celeste, iconoLupa);
@@ -182,6 +230,17 @@ export class TouchControls {
     this.vehiculo = crearBoton(scene, 0, 0, R.vehiculo, PALETTE.azulGorra, iconoVehiculo);
     this.vehiculo.on('pointerdown', () => this.onVehiculo?.());
 
+    // ---- CÁMARA ----
+    const texCamara = TEX_CAMARA.find((k) => scene.textures.exists(k));
+    // Fondo oscuro: el ícono generado es de trazo blanco (igual que el fallback dibujado).
+    this.camara = crearBoton(scene, 0, 0, R.camara, PALETTE.marino, texCamara ? () => {} : iconoCamara);
+    this.camara.pintar(PALETTE.marino, 1, PALETTE.celeste, 4);
+    if (texCamara) {
+      const img = scene.add.image(0, 0, texCamara).setDisplaySize(R.camara * 1.3, R.camara * 1.3);
+      this.camara.add(img);
+    }
+    this.camara.on('pointerdown', () => this.onCamara?.());
+
     // ---- PAUSA ----
     this.pausa = crearBoton(scene, 0, 0, PAUSA.r, PALETTE.marino, iconoPausa);
     this.pausa.pintar(PALETTE.marino, 0.85, PALETTE.celeste, 3);
@@ -196,7 +255,7 @@ export class TouchControls {
       stroke: PALETTE.marino, strokeThickness: 4,
     }).setOrigin(0.5).setDepth(DEPTH - 2).setVisible(false);
 
-    this.todos = [this.accion, this.lupa, this.correr, this.vehiculo, this.pausa, this.anillo, this.energiaArco];
+    this.todos = [this.accion, this.lupa, this.correr, this.vehiculo, this.camara, this.pausa, this.anillo, this.energiaArco, this.progresoArco];
     this.setEstado('apagado');
 
     this.offResize = Layout.onResize(scene, () => this.reposicionar());
@@ -204,6 +263,8 @@ export class TouchControls {
       this.offResize?.();
       scene.input.off('pointerup', soltarCorrer);
       scene.input.off('pointerupoutside', soltarCorrer);
+      scene.input.off('pointerup', soltarAccion);
+      scene.input.off('pointerupoutside', soltarAccion);
     });
   }
 
@@ -222,6 +283,22 @@ export class TouchControls {
     const p = Layout.anchor(scene, PAUSA.ancla, PAUSA.dx, PAUSA.dy);
     this.pausa.setPosition(Math.round(p.x), Math.round(p.y));
     this.energiaDibujada = -1;
+    this.progresoDibujado = -1;
+  }
+
+  /** Anillo de progreso (arco) alrededor de ACCIÓN mientras se mantiene la fumigación; 0 lo borra. */
+  dibujarProgreso(v) {
+    const p = Phaser.Math.Clamp(Number(v) || 0, 0, 1);
+    if (Math.abs(p - this.progresoDibujado) < 0.01) return;
+    this.progresoDibujado = p;
+    const g = this.progresoArco.clear();
+    if (p <= 0) return;
+    const r = R.accion + 7, x = this.accion.x, y = this.accion.y;
+    g.lineStyle(6, hex(PALETTE.linea), 0.5).strokeCircle(x, y, r);
+    const inicio = -Math.PI / 2;
+    g.lineStyle(6, hex(PALETTE.verde), 1).beginPath();
+    g.arc(x, y, r, inicio, inicio + Math.PI * 2 * p, false);
+    g.strokePath();
   }
 
   /** @param {'apagado'|'activo'|'ocupado'} estado */
@@ -248,11 +325,11 @@ export class TouchControls {
     }
   }
 
-  /** Bloquea lupa/correr/pausa durante la limpieza. */
+  /** Bloquea lupa/correr/cámara/pausa durante la limpieza. */
   setBloqueados(bloq) {
     if (this._bloq === bloq) return;
     this._bloq = bloq;
-    for (const b of [this.lupa, this.correr, this.pausa]) {
+    for (const b of [this.lupa, this.correr, this.camara, this.pausa]) {
       b.setHabilitado(!bloq);
       b.setAlpha(bloq ? 0.6 : 1);
     }
@@ -317,9 +394,10 @@ export class TouchControls {
   }
 
   /** Llamar cada frame desde GameScene.update(). */
-  update({ activo, limpiando }) {
+  update({ activo, limpiando, progreso = 0 }) {
     this.setEstado(limpiando ? 'ocupado' : activo ? 'activo' : 'apagado');
     this.setBloqueados(!!limpiando);
+    this.dibujarProgreso(limpiando ? progreso : 0);
     if (this.scene.player) this.dibujarEnergia(this.scene.player.energia);
     if (this.flechaObjetivo) {
       if (this.scene.time.now >= this.flechaHasta || this.flechaObjetivo.state === 'limpio') {

@@ -1,12 +1,21 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
+import { Layout } from './Layout.js';
+import { HUD_KEY_LIBRE } from '../scenes/HUDScene.js';
 
 const PANEL_W = 260;
 const PANEL_H = 100;
+/** Centro del cartel en vertical: borde superior en 165, bajo la línea de misión y el minimapa (56..156). */
+const Y_VERTICAL = 165 + PANEL_H / 2;
+/** Centro del cartel sin datos de la HUD (horizontal antes de que publique `hudLibre`). */
+const Y_SIN_HUD = 70;
 const BTN_W = 200;
 const BTN_H = 44;
 const DEPTH = 9000;
+/** Lado 'abajo': espacio libre sobre el borde inferior (vertical táctil: joystick + botones). */
+const RESERVA_ABAJO_TACTIL = 280;
+const RESERVA_ABAJO = 24;
 
 /**
  * Cartel "¡Criadero detectado!" con botón "E · Eliminar agua" (fiel al mockup).
@@ -28,7 +37,7 @@ export class InteractionPrompt {
     this.isTouch = this.sinBoton || !!scene.sys.game.device.input.touch;
 
     const cx = scene.scale.width / 2;
-    this.container = scene.add.container(cx, 70).setScrollFactor(0).setDepth(DEPTH).setVisible(false);
+    this.container = scene.add.container(cx, Y_SIN_HUD).setScrollFactor(0).setDepth(DEPTH).setVisible(false);
 
     // Panel
     const panel = scene.add.graphics();
@@ -95,27 +104,75 @@ export class InteractionPrompt {
     this.worldBg = scene.add.graphics();
     this.worldLabel.add([this.worldBg, this.worldText]);
     this.modo = null;
+    /** 'arriba' (bajo la HUD) o 'abajo' (sobre los controles): el lado opuesto al objetivo. */
+    this.lado = 'arriba';
     this.setModo('criadero');
 
-    // `scale` es del juego (compartido entre escenas): sin quitar el listener en destroy() quedaría
-    // sonando sobre un container ya destruido cada vez que se reinicia GameScene (rejugar un nivel).
-    this.onResize = (size) => this.container.setX(size.width / 2);
-    scene.scale.on('resize', this.onResize);
+    // Posición según la HUD (ver reposicionar). `Layout.onResize` se limpia solo en shutdown; el
+    // listener del registry se quita en destroy() (la HUD arranca después y publica su franja libre).
+    this.offResize = Layout.onResize(scene, (w) => this.reposicionar(w));
+    this.onRegistry = (parent, key) => { if (key === HUD_KEY_LIBRE) this.reposicionar(scene.scale.width); };
+    scene.registry.events.on('setdata', this.onRegistry);
+    scene.registry.events.on('changedata', this.onRegistry);
+  }
+
+  /**
+   * Vertical: bajo la línea de misión y el minimapa de la HUD (borde superior en 165, como el AlertToast).
+   * Horizontal/escritorio: centrado en la franja libre entre el panel de jugador/misiones y los
+   * paneles de la derecha (`hudLibre`, la publica la HUD) si el cartel cabe; si no, bajo la fila de
+   * paneles. Sin HUD todavía: arriba al centro (y 70).
+   */
+  reposicionar(w) {
+    let cx = w / 2, cy = Y_SIN_HUD;
+    const portrait = Layout.isPortrait(this.scene);
+    if (portrait) {
+      cy = Y_VERTICAL;
+    } else {
+      const libre = this.scene.registry.get(HUD_KEY_LIBRE);
+      if (libre && libre.x1 - libre.x0 >= PANEL_W + 24) {
+        cx = (libre.x0 + libre.x1) / 2;
+        cy = Layout.safe(this.scene).top + PANEL_H / 2;
+      } else if (libre) {
+        cy = libre.y1 + 8 + PANEL_H / 2;
+      }
+    }
+    if (this.lado === 'abajo') {
+      // Sobre los controles táctiles (vertical: joystick y botones ocupan ~250 px) o el borde inferior.
+      const h = this.scene.scale.height;
+      const reserva = this.isTouch ? (portrait ? RESERVA_ABAJO_TACTIL : RESERVA_ABAJO) : RESERVA_ABAJO;
+      cy = Math.max(cy, h - reserva - PANEL_H / 2);
+    }
+    this.container.setPosition(Math.round(cx), Math.round(cy));
+  }
+
+  /**
+   * Lado de la pantalla donde se coloca el cartel, para no tapar al objetivo: 'arriba' (bajo la
+   * HUD, por defecto) o 'abajo' (sobre los controles). GameScene lo decide según dónde quede el
+   * criadero/brote en pantalla.
+   * @param {'arriba'|'abajo'} lado
+   */
+  setLado(lado) {
+    const l = lado === 'abajo' ? 'abajo' : 'arriba';
+    if (l === this.lado) return;
+    this.lado = l;
+    this.reposicionar(this.scene.scale.width);
   }
 
   /**
    * Textos según el objetivo: 'criadero' ("¡Criadero detectado!", "E · Eliminar agua", "Presiona E")
    * o 'brote' ("¡Brote de mosquitos!", "E · Fumigar", "Mantén E").
-   * @param {'criadero'|'brote'} modo
+   * o 'estacion' ("Estación SEDES", "E · Biblioteca", "Presiona E").
+   * @param {'criadero'|'brote'|'estacion'} modo
    */
   setModo(modo) {
     if (modo === this.modo) return;
     this.modo = modo;
     const brote = modo === 'brote';
-    this.title.setText(brote ? '¡Brote de mosquitos!' : '¡Criadero detectado!');
-    this.label.setText(brote ? 'Fumigar' : 'Eliminar agua');
+    const estacion = modo === 'estacion';
+    this.title.setText(estacion ? 'Estación SEDES' : brote ? '¡Brote de mosquitos!' : '¡Criadero detectado!');
+    this.label.setText(estacion ? 'Biblioteca' : brote ? 'Fumigar' : 'Eliminar agua');
     const etiqueta = this.sinBoton ? 'Toca el botón'
-      : this.isTouch ? (brote ? 'Toca Fumigar' : 'Toca Eliminar')
+      : this.isTouch ? (estacion ? 'Toca Biblioteca' : brote ? 'Toca Fumigar' : 'Toca Eliminar')
         : (brote ? 'Mantén E' : 'Presiona E');
     this.worldText.setText(etiqueta);
     const lw = this.worldText.width + 14, lh = this.worldText.height + 8;
@@ -170,7 +227,9 @@ export class InteractionPrompt {
   hideLabel() { this.worldLabel.setVisible(false); }
 
   destroy() {
-    this.scene.scale.off('resize', this.onResize);
+    this.offResize?.();
+    this.scene.registry.events.off('setdata', this.onRegistry);
+    this.scene.registry.events.off('changedata', this.onRegistry);
     if (this.tween) this.tween.stop();
     this.container.destroy();
     this.worldLabel.destroy();

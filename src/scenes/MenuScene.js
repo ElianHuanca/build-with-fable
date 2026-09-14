@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
 import { Layout } from '../systems/Layout.js';
+import { t } from '../i18n/index.js';
 
 const FONT = 'Arial, sans-serif';
 const SONIDO_KEY = 'dengue.sonido';
@@ -181,14 +182,25 @@ export class MenuScene extends Phaser.Scene {
         color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_gear',
         onClick: () => this.abrirConfiguracion(),
       }));
-    } else {
       root.add(makeButton(this, {
-        x: W / 2 - 112, y: smallY, w: 200, h: 48, label: 'CRÉDITOS', fontSize: 16,
+        x: W / 2, y: smallY + 112, w, h: 46, label: t('menu.biblioteca'), fontSize: 16,
+        color: PALETTE.azulGorra, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_book',
+        onClick: () => this.abrirBiblioteca(),
+      }));
+    } else {
+      const bw = Math.min(200, (W - 40 - 24) / 3);
+      root.add(makeButton(this, {
+        x: W / 2 - bw - 12, y: smallY, w: bw, h: 48, label: 'CRÉDITOS', fontSize: 16,
         color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_book',
         onClick: () => this.abrirCreditos(),
       }));
       root.add(makeButton(this, {
-        x: W / 2 + 112, y: smallY, w: 200, h: 48, label: 'CONFIGURACIÓN', fontSize: 16,
+        x: W / 2, y: smallY, w: bw, h: 48, label: t('menu.biblioteca'), fontSize: 16,
+        color: PALETTE.azulGorra, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_book',
+        onClick: () => this.abrirBiblioteca(),
+      }));
+      root.add(makeButton(this, {
+        x: W / 2 + bw + 12, y: smallY, w: bw, h: 48, label: 'CONFIGURACIÓN', fontSize: 16,
         color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_gear',
         onClick: () => this.abrirConfiguracion(),
       }));
@@ -257,6 +269,14 @@ export class MenuScene extends Phaser.Scene {
     }
     this.tweens.add({ targets: logo, y: y - 8, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
     return logo;
+  }
+
+  /** Abre la Biblioteca SEDES encima del menú (el menú queda pausado y vuelve al cerrarla). */
+  abrirBiblioteca() {
+    if (this.scene.isActive('Library')) return;
+    this.scene.launch('Library', { desde: 'menu' });
+    this.scene.pause();
+    this.game.events.once('library:cerrar', () => { if (this.scene.isPaused()) this.scene.resume(); });
   }
 
   abrirCreditos() {

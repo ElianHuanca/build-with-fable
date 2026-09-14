@@ -21,6 +21,13 @@ const GAP_PANELES = 8;
 const PANEL_MIN_W = 200;
 /** Tiempo que la lista de misiones queda desplegada en vertical al tocar "?". */
 const MISIONES_DESPLEGADAS_MS = 3000;
+/** Paneles que se apartan (v3 §1.3): alpha normal y atenuada cuando tapan al jugador/brote/criadero. */
+const ALPHA_PANEL = 0.9;
+const ALPHA_EVITAR = 0.25;
+const EVITAR_MS = 150;
+/** Lado 'arriba' del dato educativo: borde superior bajo la HUD (vertical) o bajo la fila de paneles. */
+const DATO_TOP_VERTICAL = 170;
+const DATO_TOP_HORIZONTAL = 100;
 
 /** Panel de jugador: horizontal (como v1) y vertical (compacto). */
 const JUGADOR = {
@@ -82,6 +89,9 @@ export class HUDScene extends Phaser.Scene {
     this.epiValor = (this.estado.epidemia || 0) / 100;           // valor animado 0..1
     this.misionesDesplegadas = false;
     this.misionesTimer = null;
+    this.misionesPlegado = false;   // horizontal: al tocar el panel solo se ve la misión activa
+    this.evitados = new Map();      // panel → ¿atenuado por evitar()?
+    this.datoLado = 'abajo';
 
     this.crearPanelJugador(Layout.isPortrait(this));
     this.crearPanelMisiones();
@@ -213,8 +223,17 @@ export class HUDScene extends Phaser.Scene {
     this.misionesPanel = this.add.container(MARGEN, MARGEN + this.jugadorH + 8).setDepth(DEPTH_PANEL + 1);
     this.misionesBg = this.add.graphics();
     this.misionesTitulo = this.texto(12, 8, 'Misiones:', 16, { color: PALETTE.celeste });
-    this.misionesPanel.add([this.misionesBg, this.misionesTitulo]);
+    this.misionesFlecha = this.texto(0, 8, '▾', 16, { color: PALETTE.celeste }).setOrigin(1, 0);
+    this.misionesPanel.add([this.misionesBg, this.misionesTitulo, this.misionesFlecha]);
     this.misionesItems = []; // {check, texto, progreso}
+    // Horizontal: tocar el panel lo pliega (solo la misión activa) o lo despliega.
+    this.misionesPanel.setInteractive(new Phaser.Geom.Rectangle(0, 0, PANEL_W, 60), Phaser.Geom.Rectangle.Contains)
+      .on('pointerdown', (p, lx, ly, ev) => {
+        ev?.stopPropagation?.();
+        if (Layout.isPortrait(this)) return;
+        this.misionesPlegado = !this.misionesPlegado;
+        this.renderMisiones();
+      });
     this.renderMisiones();
   }
 
@@ -237,11 +256,18 @@ export class HUDScene extends Phaser.Scene {
   misionesW() { return Layout.isPortrait(this) ? Math.min(PANEL_W, this.scale.width - MARGEN * 2) : PANEL_W; }
 
   renderMisiones() {
-    const lista = Array.isArray(this.estado.misiones) ? this.estado.misiones : [];
+    const todasLista = Array.isArray(this.estado.misiones) ? this.estado.misiones : [];
+    const plegado = this.misionesPlegado && !Layout.isPortrait(this);
+    // Plegado: solo la misión activa (la primera sin hacer) o, si están todas hechas, la última.
+    const activaIdx = todasLista.findIndex((m) => !m.hecho);
+    const lista = !plegado ? todasLista
+      : todasLista.length ? [todasLista[activaIdx >= 0 ? activaIdx : todasLista.length - 1]] : [];
     const filaH = 26, top = 34;
     const w = this.misionesW();
     const h = top + Math.max(1, lista.length) * filaH + 4;
     this.panel(this.misionesBg, w, h);
+    this.misionesFlecha.setPosition(w - 12, 8).setText(plegado ? '▸' : '▾');
+    if (this.misionesPanel.input) this.misionesPanel.input.hitArea.setSize(w, h);
 
     // Crear o reciclar filas
     while (this.misionesItems.length < lista.length) {
@@ -284,7 +310,7 @@ export class HUDScene extends Phaser.Scene {
 
     // Línea compacta (vertical)
     if (this.misionLineaText) {
-      const todas = lista.length > 0 && lista.every((m) => m.hecho);
+      const todas = todasLista.length > 0 && todasLista.every((m) => m.hecho);
       let linea = '';
       if (activaM) linea = `Misión: ${activaM.texto}${activaM.progreso ? ' ' + activaM.progreso : ''}`;
       else if (todas) linea = 'Misiones completas';
@@ -310,6 +336,7 @@ export class HUDScene extends Phaser.Scene {
     this.misionBtn.setPosition(lw - 16, h / 2);
     this.misionLinea.setVisible(portrait && hayTexto);
     this.misionLineaH = h;
+    this.misionLineaW = lw;
   }
 
   /** Vertical: muestra la lista completa 3 s (bajo la línea de misión). */
@@ -319,7 +346,7 @@ export class HUDScene extends Phaser.Scene {
     this.misionesDesplegadas = true;
     this.tweens.killTweensOf(this.misionesPanel);
     this.misionesPanel.setVisible(true).setAlpha(0);
-    this.tweens.add({ targets: this.misionesPanel, alpha: 1, duration: 150 });
+    this.tweens.add({ targets: this.misionesPanel, alpha: ALPHA_PANEL, duration: 150 });
     this.misionesTimer = this.time.delayedCall(MISIONES_DESPLEGADAS_MS, () => this.plegarMisiones());
   }
 
@@ -424,12 +451,96 @@ export class HUDScene extends Phaser.Scene {
     this.datoTimer = null;
   }
 
-  /** Ancho y línea base (y) del dato educativo: sobre los botones táctiles, sin tocar el joystick. */
+  /**
+   * Ancho y línea base (y, borde inferior) del dato educativo. Lado 'abajo' (por defecto): sobre
+   * los botones táctiles, sin tocar el joystick. Lado 'arriba' (ver setLadoDato): bajo la HUD,
+   * cuando el objetivo está en la mitad inferior de la pantalla.
+   */
   datoGeom(w, h) {
     const portrait = Layout.isPortrait(this);
-    if (this.tactil && portrait) return { w: w - 2 * MARGEN, y: h - 270 };
-    if (this.tactil) return { w: Math.min(520, w - 420), y: h - MARGEN };
-    return { w: Math.min(520, w - 2 * MARGEN), y: h - MARGEN };
+    let g;
+    if (this.tactil && portrait) g = { w: w - 2 * MARGEN, y: h - 270 };
+    else if (this.tactil) g = { w: Math.min(520, w - 420), y: h - MARGEN };
+    else g = { w: Math.min(520, w - 2 * MARGEN), y: h - MARGEN };
+    if (this.datoLado === 'arriba') {
+      const libre = this.registry.get(HUD_KEY_LIBRE);
+      const top = portrait ? DATO_TOP_VERTICAL : Math.max(DATO_TOP_HORIZONTAL, (libre?.y1 ?? 0) + 8);
+      const alto = (this.datoText?.height || 20) + 20;
+      g.y = Math.min(g.y, top + alto);
+    } else if (this.datoTope) {
+      // Abajo también está el cartel de detección: el banner se apoya encima de él.
+      g.y = Math.min(g.y, this.datoTope);
+    }
+    return g;
+  }
+
+  /**
+   * Lado del dato educativo (banner de tips): el opuesto al objetivo para no taparlo.
+   * @param {'arriba'|'abajo'} lado
+   * @param {number|null} [topeAbajo] y (px) máxima del borde inferior del banner cuando va abajo
+   *   (borde superior del cartel de detección si también está abajo); null = sin tope.
+   */
+  setLadoDato(lado, topeAbajo = null) {
+    const l = lado === 'arriba' ? 'arriba' : 'abajo';
+    const tope = Number.isFinite(topeAbajo) ? Math.round(topeAbajo) : null;
+    if (l === this.datoLado && tope === this.datoTope) return;
+    this.datoLado = l;
+    this.datoTope = tope;
+    if (this.dato?.visible && this.viva()) {
+      const y = this.datoGeom(this.scale.width, this.scale.height).y;
+      this.tweens.killTweensOf(this.dato);
+      this.tweens.add({ targets: this.dato, y, alpha: 1, duration: 200, ease: 'Sine.easeOut' });
+    }
+  }
+
+  // ---------- paneles que se apartan (v3 §1.3) ----------
+
+  /** Paneles visibles con su rectángulo en píxeles de pantalla. */
+  panelesRect() {
+    const out = [];
+    const add = (obj, w, h) => { if (obj?.visible && w > 0 && h > 0) out.push({ obj, r: { x: obj.x, y: obj.y, w, h } }); };
+    add(this.jugador, this.jugadorW, this.jugadorH);
+    // En vertical la lista de misiones es efímera (3 s con tween propio): no se atenúa.
+    if (!Layout.isPortrait(this)) add(this.misionesPanel, this.misionesW(), this.misionesH);
+    add(this.misionLinea, this.misionLineaW || 0, this.misionLineaH);
+    add(this.barrio.c, this.barrio.w, this.barrio.h);
+    add(this.epidemia.c, this.epidemia.w, this.epidemia.h);
+    add(this.centro, this.centroW, this.centroH);
+    return out;
+  }
+
+  /**
+   * Atenúa (alpha 0.25, tween 150 ms) los paneles que tapan alguno de `rects` (jugador, brotes,
+   * criaderos activos, en píxeles de pantalla; los calcula GameScene con worldToScreen cada
+   * 100 ms) y restaura a 0.9 los que ya no tapan nada.
+   * @param {Array<{x:number,y:number,w:number,h:number}>} rects
+   */
+  evitar(rects) {
+    if (!this.viva()) return;
+    const lista = Array.isArray(rects) ? rects : [];
+    const cruza = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    const vistos = new Set();
+    for (const { obj, r } of this.panelesRect()) {
+      vistos.add(obj);
+      const tapa = lista.some((k) => cruza(r, k));
+      if (this.evitados.get(obj) === tapa) continue;
+      this.evitados.set(obj, tapa);
+      this.atenuarPanel(obj, tapa);
+    }
+    // Paneles que se ocultaron (cambio de orientación): olvidar su estado y dejarlos normales.
+    for (const [obj, tapa] of this.evitados) {
+      if (!vistos.has(obj)) { this.evitados.delete(obj); if (tapa && obj.active) obj.setAlpha(ALPHA_PANEL); }
+    }
+  }
+
+  atenuarPanel(obj, tapa) {
+    this.tweens.killTweensOf(obj);
+    const esEpidemia = obj === this.epidemia.c;
+    if (esEpidemia && this.epiPulso) { this.epiPulso.stop(); this.epiPulso = null; }
+    this.tweens.add({
+      targets: obj, alpha: tapa ? ALPHA_EVITAR : ALPHA_PANEL, duration: EVITAR_MS, ease: 'Sine.easeOut',
+      onComplete: () => { if (!tapa && esEpidemia) this.manejarPulsoEpidemia(this.estado.epidemia); },
+    });
   }
 
   // ---------- layout ----------
@@ -507,6 +618,9 @@ export class HUDScene extends Phaser.Scene {
       });
     }
 
+    // Al reacomodar, los paneles vuelven a su alpha: evitar() los reevalúa en la próxima llamada.
+    this.evitados.clear();
+
     // Dato educativo
     const g = this.datoGeom(w, h);
     this.datoW = g.w;
@@ -519,7 +633,10 @@ export class HUDScene extends Phaser.Scene {
 
   /** ¿La escena sigue viva y con sus objetos? (evita usar Text destruidos tras un restart). */
   viva() {
-    return this.sys && this.sys.isActive() && this.misionLineaText && this.misionLineaText.active;
+    // En create() el estado es CREATING (isActive() aún es false) y ahí corre el primer reposicionar().
+    const st = this.sys?.settings?.status;
+    const activa = this.sys && (this.sys.isActive() || st === Phaser.Scenes.CREATING);
+    return !!activa && !!this.misionLineaText && this.misionLineaText.active;
   }
 
   aplicar(key, value) {
@@ -587,14 +704,15 @@ export class HUDScene extends Phaser.Scene {
   manejarPulsoEpidemia(valor100) {
     const riesgo = valor100 >= UMBRAL_RIESGO;
     const targets = [this.epidemia.c, this.finas.riesgo.c];
-    if (riesgo && !this.epiPulso) {
+    // Panel atenuado por evitar(): el pulso arranca cuando se restaure (atenuarPanel).
+    if (riesgo && !this.epiPulso && !this.evitados?.get(this.epidemia.c)) {
       this.epiPulso = this.tweens.add({
         targets, alpha: 0.55, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
       });
     } else if (!riesgo && this.epiPulso) {
       this.epiPulso.stop();
       this.epiPulso = null;
-      targets.forEach((t) => t.setAlpha(1));
+      targets.forEach((t) => t.setAlpha(this.evitados?.get(t) ? ALPHA_EVITAR : 1));
     }
   }
 

@@ -35,6 +35,9 @@ export class Compass {
       .setVisible(true);
   }
 
+  /** Nodos a ocultar en las fotos (GameScene.capturar): sin esto la flecha salía en la captura. */
+  overlays() { return [this.flecha]; }
+
   destroy() {
     this.flecha.destroy();
   }

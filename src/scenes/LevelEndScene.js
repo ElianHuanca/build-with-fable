@@ -218,14 +218,24 @@ export class LevelEndScene extends Phaser.Scene {
     content.add(this.add.text(0, y, 'Aprendiste hoy', {
       fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.azulGorra,
     }).setOrigin(0.5, 0));
-    y += 32;
+    y += 30;
+    // Panel claro detrás de los bullets: texto marino sobre el fondo oscuro no se leía.
+    const padH = 12, padV = 10;
+    const hechosBg = this.add.graphics();
+    content.add(hechosBg);
+    const hechosTop = y;
+    y += padV;
     this.hechos.forEach((dato) => {
-      const t = this.add.text(-anchoTexto / 2, y, `• ${dato}`, {
-        fontFamily: FONT, fontSize: 15, color: PALETTE.marino, wordWrap: { width: anchoTexto },
+      const t = this.add.text(-anchoTexto / 2 + padH, y, `• ${dato}`, {
+        fontFamily: FONT, fontSize: 15, color: PALETTE.marino, wordWrap: { width: anchoTexto - padH * 2 },
       }).setOrigin(0, 0);
       content.add(t);
-      y += t.height + 8;
+      y += t.height + 6;
     });
+    y += padV - 6;
+    hechosBg.fillStyle(0x000000, 0.2).fillRoundedRect(-anchoTexto / 2, hechosTop + 3, anchoTexto, y - hechosTop, 12);
+    hechosBg.fillStyle(hex(PALETTE.blanco), 0.96).fillRoundedRect(-anchoTexto / 2, hechosTop, anchoTexto, y - hechosTop, 12);
+    hechosBg.lineStyle(2, hex(PALETTE.celeste), 1).strokeRoundedRect(-anchoTexto / 2, hechosTop, anchoTexto, y - hechosTop, 12);
     y += 14;
 
     if (this.quiz) y = this.crearQuiz(y, anchoTexto);

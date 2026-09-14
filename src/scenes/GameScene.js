@@ -14,18 +14,37 @@ import { EpidemicMeter } from '../systems/EpidemicMeter.js';
 import { Minimap } from '../systems/Minimap.js';
 import { Compass } from '../systems/Compass.js';
 import { AlertToast } from '../systems/AlertToast.js';
-import { applyCameraZoom } from '../systems/CameraZoom.js';
+import { applyCameraZoom, worldToScreen } from '../systems/CameraZoom.js';
+import { Layout } from '../systems/Layout.js';
+import { Badges } from '../systems/Badges.js';
 import { saveSystem } from '../systems/SaveSystem.js';
 import { AudioManager } from '../systems/AudioManager.js';
 import { PALETTE } from '../data/palette.js';
 import { FACTS } from '../data/facts.js';
 import { TIPS } from '../data/tips.js';
+import { speciesById } from '../data/species.js';
 import { esModoTactil } from '../data/ui.js';
 import { getLevel, LEVELS } from '../data/levels.js';
 
 const FOTO_SIZE = 256;
 const FOTO_ANTES = 'foto_antes';
 const FOTO_DESPUES = 'foto_despues';
+/** Textura de la captura para la cámara con IA (v3 §1.2). */
+const CAM_SNAP = 'cam_snap';
+/** Un brote a menos de esto (px de mundo) sale en la foto de la cámara; si no, se fotografía al jugador. */
+const RADIO_FOTO_BROTE = 160;
+/**
+ * Margen de la cámara (v3 §1.3) en píxeles de PANTALLA: los límites de scroll se amplían para que
+ * el jugador nunca quede bajo la HUD (arriba) ni bajo los controles táctiles (abajo).
+ */
+const MARGEN_CAM = {
+  tactilVertical: { top: 150, bottom: 250 },
+  tactilHorizontal: { top: 100, bottom: 120 },
+  escritorio: { top: 100, bottom: 60 },
+};
+/** Cada cuánto se recalcula qué paneles de la HUD tapan al jugador/brotes (HUDScene.evitar). */
+const EVITAR_MS = 100;
+const ALPHA_MINIMAPA_EVITAR = 0.35;
 
 /** Duración de la jornada (v2, mockup sección 1.2): cuenta atrás en segundos. */
 const JORNADA_SEG = 240;
@@ -68,9 +87,11 @@ export class GameScene extends Phaser.Scene {
     this.zones = level.zones;
 
     this.physics.world.setBounds(0, 0, level.widthPx, level.heightPx);
+    this.nivelW = level.widthPx; this.nivelH = level.heightPx;
     this.player = new Player(this, level.spawn.x, level.spawn.y);
     this.physics.add.collider(this.player, level.solids);
 
+    // Los límites definitivos (con margen) se fijan en aplicarMargenCamara, tras el zoom.
     this.cameras.main.setBounds(0, 0, level.widthPx, level.heightPx).startFollow(this.player, true, 0.12, 0.12);
 
     this.tactil = esModoTactil(this.sys.game);
@@ -97,21 +118,29 @@ export class GameScene extends Phaser.Scene {
     this.fumigando = null;   // brote que se está fumigando (mantener E)
     this.saliDeEstacion = false;
     this.tipEstacionMostrado = false;
+    this.estacionActiva = false; // el jugador está en la estación sin otro objetivo: E abre la Biblioteca
+    this.overlayAbierto = null;  // 'camara' | 'biblioteca' mientras esa escena está encima (pausa suave)
+    this.mensajePendiente = null; // aviso a mostrar al cerrar la cámara (especie identificada)
 
     this.prompt = new InteractionPrompt(this, { sinBoton: this.tactil });
     this.prompt.onPress(() => this.intentarLimpiar());
     this.pausa = new PauseMenu(this, { onSalir: () => this.salirAlMenu() });
     this.touch = this.tactil
       ? new TouchControls(this, {
-        onAccion: () => this.intentarLimpiar(),
+        // Toque corto: solo criaderos (un brote soltado antes de tiempo queda cancelado, no se relanza).
+        onAccion: () => { if (this.activo) this.intentarLimpiar(); },
+        onAccionInicio: () => this.accionInicio(),
+        onAccionFin: () => this.accionFin(),
         onPausa: () => this.togglePausa(),
         onVehiculo: () => this.toggleVehiculo(),
+        onCamara: () => this.abrirCamara(),
       })
       : null;
     this.keyE = this.input.keyboard.addKey('E');
     this.keyEsc = this.input.keyboard.addKey('ESC');
     this.keyV = this.input.keyboard.addKey('V');
     this.keyF = this.input.keyboard.addKey('F'); // alias de V para subir/bajar de la camioneta
+    this.keyC = this.input.keyboard.addKey('C'); // cámara con IA
 
     // Puntaje, misiones y reloj
     this.score = new ScoreManager();
@@ -170,8 +199,40 @@ export class GameScene extends Phaser.Scene {
 
     // Zoom automático + cámara de UI sin zoom (debe ir con toda la UI de la escena ya creada).
     applyCameraZoom(this);
+    // Después del zoom (su handler de resize corre antes): límites de cámara con margen para la HUD.
+    Layout.onResize(this, () => this.aplicarMargenCamara());
     this.registrarEventos();
     this.scene.launch('HUD');
+
+    // Paneles que se apartan: cada 100 ms se avisa a la HUD qué queda debajo de sus paneles.
+    this.minimapaEvitado = false;
+    this.time.addEvent({ delay: EVITAR_MS, loop: true, callback: () => this.actualizarEvitar() });
+
+    // Bonus por estudiar en la Biblioteca (v3 §1.1): +50 en la siguiente jornada tras 5 tarjetas nuevas.
+    const bonus = Badges.bonusPendiente();
+    if (bonus > 0) {
+      Badges.consumirBonus();
+      this.time.delayedCall(700, () => {
+        if (this.terminado) return;
+        this.sumarPuntos(bonus);
+        this.alertToast.mostrar(`Bonus por estudiar: +${bonus}`, 3500);
+      });
+    }
+  }
+
+  /**
+   * Límites de la cámara con margen (v3 §1.3): se amplían por arriba y por abajo (MARGEN_CAM en px
+   * de pantalla → / zoom = px de mundo) para que, en los bordes del mapa, el jugador siga centrado
+   * en la franja libre y nunca quede bajo la HUD ni bajo los controles.
+   */
+  aplicarMargenCamara() {
+    const cam = this.cameras.main;
+    if (!cam || !this.nivelW) return;
+    const z = cam.zoom || 1;
+    const portrait = Layout.isPortrait(this);
+    const m = this.tactil ? (portrait ? MARGEN_CAM.tactilVertical : MARGEN_CAM.tactilHorizontal) : MARGEN_CAM.escritorio;
+    const top = m.top / z, bottom = m.bottom / z;
+    cam.setBounds(0, -top, this.nivelW, this.nivelH + top + bottom);
   }
 
   /** Listeners en this.events (se retiran en shutdown para no duplicarlos al volver a entrar). */
@@ -191,9 +252,17 @@ export class GameScene extends Phaser.Scene {
       on('nivel:reintentar', () => this.reintentar()),
       on('nivel:foto', () => this.scene.launch('Photo', { antes: FOTO_ANTES, despues: FOTO_DESPUES })),
       on('foto:cerrar', () => this.scene.launch('LevelEnd', this.resultado)),
+      // Cámara con IA (CameraScene emite en Game.events) y Biblioteca (v3 §1.1/1.2).
+      on('camera:cerrar', () => this.cerrarCamara()),
+      on('camera:especie', (d) => this.onEspecieIdentificada(d)),
+      on('library:cerrar', () => this.cerrarBiblioteca()),
     ];
+    // La Biblioteca puede avisar por game.events (contrato compartido con el menú).
+    const onLibGlobal = () => this.cerrarBiblioteca();
+    this.game.events.on('library:cerrar', onLibGlobal);
     this.events.once('shutdown', () => {
       offs.forEach((off) => off());
+      this.game.events.off('library:cerrar', onLibGlobal);
       AudioManager.stopMusic();
       this.prompt?.destroy();
       this.touch?.destroy();
@@ -206,9 +275,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   update() {
-    if (Phaser.Input.Keyboard.JustDown(this.keyEsc)) this.togglePausa();
-    if (this.pausa.abierta) {
-      // Pausa suave: el reloj no avanza y el jugador no se mueve; el resto de la escena sigue viva.
+    // Tras cerrar la cámara/biblioteca con una tecla (Esc, E), esa misma pulsación llega aquí en el
+    // siguiente frame: se ignoran las teclas de acción unos ms para no abrir la pausa o relanzar.
+    const teclasOk = !this.overlayAbierto && this.time.now > (this.teclasBloqueadasHasta || 0);
+    if (teclasOk && Phaser.Input.Keyboard.JustDown(this.keyEsc)) this.togglePausa();
+    if (this.pausa.abierta || this.overlayAbierto) {
+      // Pausa suave (menú de pausa, cámara o biblioteca): el reloj no avanza y el jugador no se
+      // mueve; el resto de la escena sigue viva.
       this.tiempoInicio += this.game.loop.delta;
       this.joystick.update();
       return;
@@ -255,12 +328,183 @@ export class GameScene extends Phaser.Scene {
     this.minimap.update();
     this.compass.update(this.broteMasCercano());
 
-    this.touch?.update({ activo: this.activo || this.broteActivo, limpiando: this.limpiando });
+    this.touch?.update({
+      activo: this.activo || this.broteActivo || this.estacionActiva, limpiando: this.limpiando,
+      progreso: this.fumigando ? this.fumigando.progresoFumigacion : 0,
+    });
 
     // E: un toque limpia el criadero; sobre un brote hay que MANTENER la tecla (soltar cancela).
-    if (Phaser.Input.Keyboard.JustDown(this.keyE)) this.accionInicio();
+    if (teclasOk && Phaser.Input.Keyboard.JustDown(this.keyE)) this.accionInicio();
     if (Phaser.Input.Keyboard.JustUp(this.keyE)) this.accionFin();
     if (Phaser.Input.Keyboard.JustDown(this.keyV) || Phaser.Input.Keyboard.JustDown(this.keyF)) this.toggleVehiculo();
+    if (teclasOk && Phaser.Input.Keyboard.JustDown(this.keyC)) this.abrirCamara();
+  }
+
+  // ---------- paneles que se apartan / cartel del lado opuesto (v3 §1.3) ----------
+
+  /**
+   * Cada EVITAR_MS: rectángulos en píxeles de pantalla del jugador, los brotes activos y el
+   * criadero detectado → HUDScene.evitar (atenúa los paneles que los tapan) y minimapa (alpha
+   * 0.35). Además el cartel de detección y el banner de tips se van al lado opuesto del objetivo.
+   */
+  actualizarEvitar() {
+    if (this.terminado || !this.player?.body) return;
+    const hud = this.scene.get('HUD');
+    const W = this.scale.width, H = this.scale.height;
+    const z = this.cameras.main.zoom || 1;
+    const rects = [];
+    const agregar = (x, y, w, h) => {
+      const p = worldToScreen(this, x, y);
+      const r = { x: p.x - (w * z) / 2, y: p.y - (h * z) / 2, w: w * z, h: h * z };
+      if (r.x < W && r.x + r.w > 0 && r.y < H && r.y + r.h > 0) rects.push(r);
+    };
+    if (!this.overlayAbierto && !this.pausa.abierta) {
+      agregar(this.player.x, this.player.y, 56, 72);
+      for (const b of this.outbreakManager.activos) {
+        if (b.state === 'fumigado') continue;
+        agregar(b.x, b.y, (b.width || 80) + 16, (b.height || 80) + 16);
+      }
+      if (this.activo) agregar(this.activo.x, this.activo.y, 72, 72);
+    }
+    hud?.evitar?.(rects);
+
+    // Minimapa: mismo tratamiento (alpha 0.35) si algo queda debajo.
+    const mm = this.minimap;
+    if (mm?.container) {
+      const r = { x: mm.container.x, y: mm.container.y, w: mm.size, h: mm.size };
+      const tapa = rects.some((k) => k.x < r.x + r.w && k.x + k.w > r.x && k.y < r.y + r.h && k.y + k.h > r.y);
+      if (tapa !== this.minimapaEvitado) {
+        this.minimapaEvitado = tapa;
+        const a = tapa ? ALPHA_MINIMAPA_EVITAR : 1;
+        if (typeof mm.setAlpha === 'function') mm.setAlpha(a);
+        else {
+          this.tweens.killTweensOf(mm.container);
+          this.tweens.add({ targets: mm.container, alpha: a, duration: EVITAR_MS * 1.5 });
+        }
+      }
+    }
+
+    // Cartel y banner en el lado opuesto al objetivo (mitad superior → abajo, y viceversa).
+    const objetivo = this.activo || this.broteActivo || (this.estacionActiva ? this.estacion : null);
+    let ladoCartel = 'arriba', ladoDato = 'abajo';
+    if (objetivo) {
+      const p = worldToScreen(this, objetivo.x, objetivo.y);
+      ladoCartel = p.y < H / 2 ? 'abajo' : 'arriba';
+      ladoDato = ladoCartel;
+    }
+    this.prompt.setLado?.(ladoCartel);
+    // Si el cartel también va abajo, el banner se apoya sobre su borde superior (100 px de alto).
+    const cartelAbajo = ladoDato === 'abajo' && this.prompt.isVisible() && this.prompt.lado === 'abajo';
+    hud?.setLadoDato?.(ladoDato, cartelAbajo ? this.prompt.container.y - 50 - 8 : null);
+  }
+
+  // ---------- cámara con IA y biblioteca (v3 §1.1/1.2) ----------
+
+  /**
+   * Pausa suave mientras una escena encima (cámara o biblioteca) tiene el control: física y reloj
+   * detenidos, controles táctiles/joystick/cartel/HUD ocultos; el resto de la escena sigue viva.
+   * @param {'camara'|'biblioteca'} que
+   */
+  pausaSuave(que) {
+    if (this.overlayAbierto) return;
+    this.overlayAbierto = que;
+    this.physics.pause();
+    this.player.setVelocity(0);
+    this.player.setSprint?.(false);
+    this.player.play(`idle_${this.player.dir}`, true);
+    if (this.motorOn) { this.motorOn = false; this.events.emit('sfx:stop', 'motor'); }
+    this.prompt.hide();
+    this.prompt.container.setVisible(false);
+    this.prompt.hideLabel();
+    this._objetivoPrompt = null;
+    this.touch?.setVisible(false);
+    if (this.tactil) { this.joystick.base?.setVisible(false); this.joystick.knob?.setVisible(false); }
+    const hud = this.scene.get('HUD');
+    this.hudVisibleAntes = !!hud?.sys?.settings?.visible;
+    if (this.hudVisibleAntes) hud.sys.setVisible(false);
+  }
+
+  /** Reanuda tras pausaSuave (idempotente). */
+  reanudar() {
+    if (!this.overlayAbierto) return;
+    this.overlayAbierto = null;
+    this.teclasBloqueadasHasta = this.time.now + 300;
+    if (!this.sys.settings.active) return;
+    this.physics.resume();
+    this.touch?.setVisible(true);
+    if (this.tactil) { this.joystick.base?.setVisible(true); this.joystick.knob?.setVisible(true); }
+    const hud = this.scene.get('HUD');
+    if (this.hudVisibleAntes && hud?.sys) hud.sys.setVisible(true);
+    if (this.mensajePendiente) {
+      const msg = this.mensajePendiente;
+      this.mensajePendiente = null;
+      this.time.delayedCall(150, () => this.alertToast.mostrar(msg, 3500));
+    }
+  }
+
+  /**
+   * Botón CÁMARA / tecla C: captura 256×256 centrada en el brote más cercano (si está a menos de
+   * RADIO_FOTO_BROTE px; si no, en el jugador) como textura 'cam_snap' y lanza la escena 'Camera'
+   * con pausa suave. Bloqueada mientras se limpia/fumiga; aviso si la escena aún no existe.
+   */
+  async abrirCamara() {
+    if (this.limpiando || this.terminado || this.pausa.abierta || this.overlayAbierto) return;
+    if (!this.scene.get('Camera')) {
+      this.alertToast.mostrar('La cámara con IA llega pronto: apunta a un mosquito y lo identifica.', 3000);
+      return;
+    }
+    const b = this.broteMasCercano();
+    const brote = b && Phaser.Math.Distance.Between(this.player.x, this.player.y, b.x, b.y) < RADIO_FOTO_BROTE ? b : null;
+    this.pausaSuave('camara');
+    const centro = brote || { x: this.player.x, y: this.player.y - 8 };
+    await this.capturar(CAM_SNAP, centro);
+    if (this.overlayAbierto !== 'camara' || !this.sys.settings.active) return;
+    this.events.emit('sfx', 'click');
+    this.scene.launch('Camera', {
+      brote,
+      especieId: brote?.especieId || null,
+      snapshotKey: this.textures.exists(CAM_SNAP) ? CAM_SNAP : null,
+    });
+  }
+
+  cerrarCamara() {
+    if (this.overlayAbierto !== 'camara') return;
+    if (this.scene.isActive('Camera') || this.scene.isPaused('Camera')) this.scene.stop('Camera');
+    this.reanudar();
+  }
+
+  /** 'camera:especie' { id, confianza, nueva }: insignia "Fotógrafo" y aviso al volver al juego. */
+  onEspecieIdentificada(d = {}) {
+    const nombre = d.id ? speciesById(d.id)?.nombre?.es : '';
+    const texto = `¡Especie identificada!${nombre ? ` ${nombre}` : ''}`;
+    let nuevaInsignia = false;
+    try { nuevaInsignia = !!Badges.otorgar?.('fotografo'); } catch { /* insignias no disponibles */ }
+    this.registry.set('mensaje', texto);
+    this.mensajePendiente = nuevaInsignia ? `${texto} · Insignia: Fotógrafo` : texto;
+  }
+
+  /**
+   * Acción en la estación SEDES (E / botón ACCIÓN con el cartel en modo 'estacion'): abre la
+   * Biblioteca ('Library', { desde: 'estacion' }) con pausa suave; si la escena aún no existe,
+   * muestra el tip de la estación y un aviso.
+   */
+  abrirBiblioteca() {
+    if (this.limpiando || this.terminado || this.pausa.abierta || this.overlayAbierto) return;
+    if (!this.scene.get('Library')) {
+      this.mostrarTip('estacion');
+      this.alertToast.mostrar('La Biblioteca SEDES llega pronto: fichas de mosquitos, síntomas y prevención.', 3000);
+      return;
+    }
+    this.pausaSuave('biblioteca');
+    this.events.emit('sfx', 'click');
+    this.scene.launch('Library', { desde: 'estacion' });
+  }
+
+  cerrarBiblioteca() {
+    if (this.overlayAbierto !== 'biblioteca') return;
+    if (this.scene.isActive('Library') || this.scene.isPaused('Library')) this.scene.stop('Library');
+    this.reanudar();
+    this.mostrarTip('estacion');
   }
 
   /** Loop del motor mientras el agente va en la camioneta y se mueve. */
@@ -336,15 +580,17 @@ export class GameScene extends Phaser.Scene {
       if (nearestC) nearestC.setDetected(true);
     }
     this.broteActivo = nearestB;
+    // Sin criadero ni brote a mano y a pie en la estación: la acción abre la Biblioteca.
+    this.estacionActiva = !nearestC && !nearestB && !this.enVehiculo && this.estacion.cerca(this.player);
 
-    const objetivo = this.activo || this.broteActivo;
+    const objetivo = this.activo || this.broteActivo || (this.estacionActiva ? this.estacion : null);
     if (objetivo === this._objetivoPrompt) return;
     this._objetivoPrompt = objetivo;
     if (objetivo) {
-      this.events.emit('sfx', 'detect');
-      this.prompt.setModo(this.activo ? 'criadero' : 'brote');
+      if (objetivo !== this.estacion) this.events.emit('sfx', 'detect');
+      this.prompt.setModo(this.activo ? 'criadero' : this.broteActivo ? 'brote' : 'estacion');
       this.prompt.show();
-      this.prompt.showLabelAt(objetivo.x, objetivo.y - 40);
+      this.prompt.showLabelAt(objetivo.x, objetivo.y - (objetivo === this.estacion ? 72 : 40));
     } else {
       this.prompt.hide();
       this.prompt.hideLabel();
@@ -399,22 +645,28 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
-   * Punto de entrada del botón ACCIÓN táctil (un toque): el criadero cercano tiene prioridad
-   * sobre el brote. Como TouchControls no distingue "mantener", sobre un brote la fumigación
-   * corre sola hasta el final.
+   * Botón "Eliminar agua" / "Fumigar" del cartel (ratón): el criadero cercano tiene prioridad
+   * sobre el brote; con un clic la fumigación corre sola hasta el final (no hay "mantener").
+   * El botón ACCIÓN táctil pasa por accionInicio/accionFin (mantener) y solo llega aquí con un
+   * toque corto sobre un criadero.
    */
   intentarLimpiar() {
     if (this.activo) return this.limpiarCriadero(this.activo);
     if (this.broteActivo) return this.fumigarBrote(this.broteActivo, { mantener: false });
+    if (this.estacionActiva) return this.abrirBiblioteca();
   }
 
-  /** Tecla E presionada: limpia el criadero (un toque) o empieza a fumigar el brote (mantener). */
+  /**
+   * Tecla E o botón ACCIÓN presionados: limpia el criadero (un toque) o empieza a fumigar el
+   * brote (mantener; soltar cancela, ver accionFin).
+   */
   accionInicio() {
     if (this.activo) return this.limpiarCriadero(this.activo);
     if (this.broteActivo) return this.fumigarBrote(this.broteActivo, { mantener: true });
+    if (this.estacionActiva) return this.abrirBiblioteca();
   }
 
-  /** Tecla E soltada: si se estaba fumigando "manteniendo", se interrumpe (el brote sigue activo). */
+  /** Tecla E / botón ACCIÓN soltados: si se estaba fumigando "manteniendo", se interrumpe (el brote sigue activo). */
   accionFin() {
     if (this.fumigando) this.fumigando.cancelarFumigacion();
   }
@@ -581,16 +833,18 @@ export class GameScene extends Phaser.Scene {
    */
   capturar(key, c) {
     return new Promise((resolve) => {
-      const cam = this.cameras.main;
       const W = this.scale.width, H = this.scale.height;
-      const sx = Phaser.Math.Clamp(Math.round((c.x - cam.scrollX) * cam.zoom - FOTO_SIZE / 2), 0, Math.max(0, W - FOTO_SIZE));
-      const sy = Phaser.Math.Clamp(Math.round((c.y - cam.scrollY) * cam.zoom - FOTO_SIZE / 2), 0, Math.max(0, H - FOTO_SIZE));
+      // Con zoom ≠ 1 la cámara escala alrededor de su centro: usar la misma fórmula que worldToScreen.
+      const p = worldToScreen(this, c.x, c.y);
+      const sx = Phaser.Math.Clamp(Math.round(p.x - FOTO_SIZE / 2), 0, Math.max(0, W - FOTO_SIZE));
+      const sy = Phaser.Math.Clamp(Math.round(p.y - FOTO_SIZE / 2), 0, Math.max(0, H - FOTO_SIZE));
       // Ocultar overlays (HUD, cartel, joystick) para que la foto muestre solo el barrio.
       const hud = this.scene.get('HUD');
       const hudVisible = !!hud?.sys?.settings?.visible;
       if (hudVisible) hud.sys.setVisible(false);
       const overlays = [this.prompt?.container, this.prompt?.worldLabel, this.joystick?.base, this.joystick?.knob,
-        this.minimap?.container, this.compass?.flecha, this.alertToast?.container,
+        this.minimap?.container, this.alertToast?.container,
+        ...(this.compass?.overlays?.() || [this.compass?.flecha]),
         ...(this.touch?.overlays() || [])].filter((o) => o && o.visible);
       overlays.forEach((o) => o.setVisible(false));
       let done = false;

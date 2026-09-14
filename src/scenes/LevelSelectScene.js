@@ -4,6 +4,9 @@ import { LEVELS } from '../data/levels.js';
 import * as Save from '../systems/SaveSystem.js';
 import { makeButton, sfx } from './MenuScene.js';
 import { Layout } from '../systems/Layout.js';
+import { Badges } from '../systems/Badges.js';
+import { INSIGNIAS } from '../data/library.js';
+import { t } from '../i18n/index.js';
 
 const FONT = 'Arial, sans-serif';
 const CARD_W = 300;
@@ -71,6 +74,8 @@ export class LevelSelectScene extends Phaser.Scene {
     const availW = W - safe.left - safe.right;
     const availH = H - TITLE_H - FOOTER_H;
     const portrait = Layout.isPortrait(this);
+    // Insignias de la biblioteca: bajo el título en horizontal; junto a "Volver" en vertical (las tarjetas ocupan todo el alto).
+    root.add(this.crearInsignias(portrait ? W - safe.right - 8 : W / 2, portrait ? H - 40 : TITLE_H + 16, portrait ? 'right' : 'center'));
 
     if (portrait) {
       // Columna: apila las tarjetas y las escala para que quepan en el alto disponible.
@@ -108,6 +113,39 @@ export class LevelSelectScene extends Phaser.Scene {
       color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro,
       onClick: () => this.scene.start('Menu'),
     }));
+  }
+
+  /** Fila pequeña de insignias de la biblioteca (ganadas en color, pendientes en gris) bajo el título. */
+  crearInsignias(x, y, align = 'center') {
+    const c = this.add.container(x, y);
+    const r = 11, gap = 30;
+    const n = Badges.lista().length;
+    const etiqueta = this.add.text(0, 0, `${t('lib.insignias')} ${n}/${INSIGNIAS.length}`, {
+      fontFamily: FONT, fontSize: 12, fontStyle: 'bold', color: PALETTE.blanco, stroke: PALETTE.linea, strokeThickness: 3,
+    }).setOrigin(0, 0.5);
+    const totalW = INSIGNIAS.length * gap + etiqueta.width;
+    const x0 = align === 'right' ? -totalW + r : -totalW / 2 + r;
+    INSIGNIAS.forEach((def, i) => {
+      const ganada = Badges.tiene(def.id);
+      const x = x0 + i * gap;
+      if (this.textures.exists(def.icono)) {
+        const img = this.add.image(x, 0, def.icono);
+        img.setScale((r * 2) / Math.max(img.width, img.height));
+        if (!ganada) img.setTint(0x9a9a9a).setAlpha(0.5);
+        c.add(img);
+      } else {
+        const g = this.add.graphics();
+        g.fillStyle(hex(ganada ? def.color : '#dfe4e8'), ganada ? 1 : 0.7).fillCircle(x, 0, r);
+        g.lineStyle(2, hex(ganada ? PALETTE.blanco : PALETTE.grisClaro), 0.9).strokeCircle(x, 0, r - 2);
+        c.add(g);
+        c.add(this.add.text(x, 0, def.glifo, {
+          fontFamily: FONT, fontSize: 11, fontStyle: 'bold', color: ganada ? PALETTE.blanco : PALETTE.grisClaro,
+        }).setOrigin(0.5));
+      }
+    });
+    etiqueta.setPosition(x0 + INSIGNIAS.length * gap - r - 4, 0);
+    c.add(etiqueta);
+    return c;
   }
 
   /** Animación de entrada (solo la primera vez; en un resize las tarjetas ya deben verse quietas). */
