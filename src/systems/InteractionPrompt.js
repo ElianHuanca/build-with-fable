@@ -142,6 +142,9 @@ export class InteractionPrompt {
       const h = this.scene.scale.height;
       const reserva = this.isTouch ? (portrait ? RESERVA_ABAJO_TACTIL : RESERVA_ABAJO) : RESERVA_ABAJO;
       cy = Math.max(cy, h - reserva - PANEL_H / 2);
+    } else if (this.topeArriba != null) {
+      // Arriba pero con el banner de alerta visible (comparten la franja libre): debajo del banner.
+      cy = Math.max(cy, this.topeArriba + PANEL_H / 2);
     }
     this.container.setPosition(Math.round(cx), Math.round(cy));
   }
@@ -152,10 +155,12 @@ export class InteractionPrompt {
    * criadero/brote en pantalla.
    * @param {'arriba'|'abajo'} lado
    */
-  setLado(lado) {
+  setLado(lado, topeArriba = null) {
     const l = lado === 'abajo' ? 'abajo' : 'arriba';
-    if (l === this.lado) return;
+    const tope = l === 'arriba' && topeArriba != null ? Math.round(topeArriba) : null;
+    if (l === this.lado && tope === (this.topeArriba ?? null)) return;
     this.lado = l;
+    this.topeArriba = tope;
     this.reposicionar(this.scene.scale.width);
   }
 
@@ -172,7 +177,9 @@ export class InteractionPrompt {
     const estacion = modo === 'estacion';
     this.title.setText(t(estacion ? 'prompt.estacion' : brote ? 'prompt.brote' : 'prompt.criadero'));
     this.label.setText(t(estacion ? 'prompt.biblioteca' : brote ? 'prompt.fumigar' : 'prompt.eliminar'));
-    const etiqueta = t(this.sinBoton ? 'prompt.tocaBotonCorto'
+    // Fumigar es "mantener presionado" (GDD §13): la pista del cartel táctil no debe decir "toca".
+    this.hint?.setText(t(brote ? 'prompt.mantenBoton' : 'prompt.tocaBoton'));
+    const etiqueta = t(this.sinBoton ? (brote ? 'prompt.mantenBotonCorto' : 'prompt.tocaBotonCorto')
       : this.isTouch ? (estacion ? 'prompt.tocaBiblioteca' : brote ? 'prompt.tocaFumigar' : 'prompt.tocaEliminar')
         : (brote ? 'prompt.mantenE' : 'prompt.presionaE'));
     this.worldText.setText(etiqueta);

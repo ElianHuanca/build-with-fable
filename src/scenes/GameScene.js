@@ -414,7 +414,18 @@ export class GameScene extends Phaser.Scene {
       ladoCartel = p.y < H / 2 ? 'abajo' : 'arriba';
       ladoDato = ladoCartel;
     }
-    this.prompt.setLado?.(ladoCartel);
+    // Arriba, el banner de alerta (AlertToast) ocupa la misma franja libre: mientras esté visible el
+    // cartel se apoya bajo su borde inferior en vez de quedar tapado por él.
+    const toast = this.alertToast;
+    let topeArriba = null;
+    if (ladoCartel === 'arriba' && toast?.visible && toast.container?.visible) {
+      const tope = toast.container.y + (toast.alto || 50) + 8;
+      // Solo si el cartel (100 px) sigue cabiendo entre el banner y el objetivo (pantallas bajas en
+      // horizontal táctil): si no, se queda en su sitio — el banner es pasajero, tapar el brote no.
+      const pObj = objetivo ? worldToScreen(this, objetivo.x, objetivo.y) : null;
+      if (!pObj || tope + 100 <= pObj.y - 56) topeArriba = tope;
+    }
+    this.prompt.setLado?.(ladoCartel, topeArriba);
     // Si el cartel también va abajo, el banner se apoya sobre su borde superior (100 px de alto).
     const cartelAbajo = ladoDato === 'abajo' && this.prompt.isVisible() && this.prompt.lado === 'abajo';
     hud?.setLadoDato?.(ladoDato, cartelAbajo ? this.prompt.container.y - 50 - 8 : null);
@@ -821,6 +832,16 @@ export class GameScene extends Phaser.Scene {
     // El tween de hide() quedaría congelado por la pausa: ocultar el cartel de inmediato.
     this.prompt.container.setVisible(false);
     this.prompt.hideLabel();
+    // El banner de alerta tampoco aporta en el resumen (y su tween de salida quedaría congelado).
+    this.alertToast.ocultar();
+    this.alertToast.container.setVisible(false);
+    // Controles táctiles, joystick, minimapa y brújula se verían a través del fondo semitransparente
+    // de LevelEnd (en vertical, justo bajo los botones del resumen): fuera también.
+    this.touch?.setVisible(false);
+    this.joystick?.base?.setVisible(false);
+    this.joystick?.knob?.setVisible(false);
+    this.minimap?.container?.setVisible(false);
+    this.compass?.flecha?.setVisible(false);
     (this.flotantes || []).forEach((t) => t.active && t.destroy());
     saveSystem.guardarNivel(this.levelId, { estrellas, tiempo, puntos: this.score.puntos });
     AudioManager.stopMusic();
@@ -873,8 +894,10 @@ export class GameScene extends Phaser.Scene {
       const finish = () => {
         if (done) return;
         done = true;
-        if (hudVisible && hud.sys) hud.sys.setVisible(true);
-        overlays.forEach((o) => o.active && o.setVisible(true));
+        // Si la jornada terminó mientras se capturaba (foto 'después' del último criadero), los
+        // overlays quedan ocultos: si no, reaparecían (banner de alerta incluido) sobre LevelEnd.
+        if (hudVisible && hud.sys && !this.terminado) hud.sys.setVisible(true);
+        if (!this.terminado) overlays.forEach((o) => o.active && o.setVisible(true));
         resolve();
       };
       try {

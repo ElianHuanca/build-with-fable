@@ -19,8 +19,8 @@ la v3 ("Biblioteca, cámara IA, visibilidad, inglés") en [PLAN_V3_BIBLIOTECA_IA
 | v2 · Ola 2 | Integración en GameScene + documentación | Hecha |
 | v2 · Ola 3 | QA vertical/horizontal, video demo v2 | No iniciada |
 | v3 · Ola 1 / Agentes A–E | Biblioteca SEDES, cámara IA (demo), enjambres y fumigación, visibilidad, assets v3 | Hecha (commit `9ab1d93`) |
-| v3 · Ola 2 | i18n (F1/F2/G), QA, documentación | En curso |
-| v3 · Cierre | QA final, video v3, push | Pendiente |
+| v3 · Ola 2 — inglés y documentación | Hecha |
+| v3 · Cierre — QA ES/EN en vertical, horizontal y escritorio | Hecha (video v3 pendiente) |
 
 ---
 
@@ -448,3 +448,21 @@ Ninguno de los 3 entregables de esta ola (QA vertical en Pixel 5, QA horizontal/
 | Enjambres (v3) | `src/objects/Brote.js` | Container con 8/14/22 mosquitos por nivel, `especieId`, `cancelarFumigacion()` |
 | Fumigación v3 | `src/systems/FumigationFX.js` | Rociador, cono de niebla, caída uno a uno, `cancelFumigation`, `fumigationProgress` |
 | Visibilidad (v3) | `src/scenes/GameScene.js`, `src/scenes/HUDScene.js` | `aplicarMargenCamara`, `actualizarEvitar` → `HUD.evitar`, cartel/banner en el lado opuesto, misiones plegables |
+
+
+## v3 — Cierre (2026-09-14)
+
+**QA final** (Playwright, Pixel 5 vertical 393×851 solo toques; horizontal 851×393; escritorio 1280×720 y 1920×1080; español e inglés): flujo completo sin errores de consola en las seis configuraciones.
+
+**Correcciones del cierre**
+- LevelEnd vertical: overlays del juego ya no "sangran" entre estrellas y resumen; panel de resumen más alto; overlay más opaco para leer el quiz; arrastre vertical cuando no cabe (851×393).
+- Cartel de brote dice "Mantén el botón de acción" (fumigar es mantener).
+- Cámara IA: el flash ya no queda opaco tras disparar en dispositivos lentos; visor en horizontal sin solapes.
+- Cartel de detección solo se apoya bajo el banner de alerta si cabe sin tapar el objetivo; banner oculto al terminar la jornada.
+- Modo foto en horizontal: botón de descarga reubicado.
+- Logo sin lema horneado: "¡Juntos contra el dengue!" ahora es texto traducible del menú.
+
+**Pendientes menores conocidos**
+- LevelEnd a 720p se escala pequeño (quiz legible pero chico); Biblioteca en 1920×1080 no escala hacia arriba.
+- Rendimiento medido solo con render por software (swiftshader, ~11 fps base); en GPU real no se espera problema.
+- Video demo v3 (`npm run demo:video` graba el flujo v1; falta un guion v3).

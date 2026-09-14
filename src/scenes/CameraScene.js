@@ -108,7 +108,9 @@ export class CameraScene extends Phaser.Scene {
       return { portrait, safe, photo: { x: (W - pw) / 2, y: top + 6, w: pw, h: ph },
         panel: { x: safe.left, y: top + ph + 18, w: W - safe.left - safe.right, h: H - (top + ph + 18) - safe.bottom } };
     }
-    const bottomReserve = this.fase === 'visor' ? 110 : 0;
+    // Visor: consejo (≈40) + etiqueta "Disparar" (≈20) + disparador (84): en pantallas bajas
+    // (teléfono horizontal, 393 px) con 110 el consejo caía sobre el disparador.
+    const bottomReserve = this.fase === 'visor' ? 150 : 0;
     const availH = H - top - bottomReserve - safe.bottom;
     const side = this.fase === 'visor' ? Math.min(availH, W * 0.6) : Math.min(availH, W * 0.42);
     const size = Phaser.Math.Clamp(side, 120, 440);
@@ -221,8 +223,8 @@ export class CameraScene extends Phaser.Scene {
       fontFamily: FONT, fontSize: 11, color: PALETTE.celeste,
     }).setOrigin(0, 1));
 
-    // Consejo
-    const hintY = photo.y + photo.h + 26;
+    // Consejo: bajo la foto, pero nunca sobre la etiqueta "Disparar" ni el disparador (R = 36).
+    const hintY = Math.min(photo.y + photo.h + 26, H - geo.safe.bottom - 36 - 12 - 36 - 14 - 16 - 20);
     this.root.add(this.add.text(W / 2, hintY, t('cam.consejo'), {
       fontFamily: FONT, fontSize: 15, fontStyle: 'bold', color: PALETTE.blanco, align: 'center',
       wordWrap: { width: W - geo.safe.left - geo.safe.right - 40 },
@@ -259,11 +261,14 @@ export class CameraScene extends Phaser.Scene {
     const rnd = mulberry(this.seed);
     this.especie = this.especieId ? speciesById(this.especieId) : especieAleatoria(rnd);
     this.confianza = 87 + Math.floor(rnd() * 12); // 87..98
-    CameraFX.flash(this, 150);
+    const flash = CameraFX.flash(this, 150);
     this.time.delayedCall(150, () => {
       this.busy = false;
       this.fase = 'analisis';
       this.layout(this.scale.width, this.scale.height);
+      // layout() hace tweens.killAll(): en un dispositivo lento el timer llega antes de que el tween
+      // del flash avance y el rectángulo blanco quedaba opaco tapando toda la pantalla.
+      if (flash.active) this.tweens.add({ targets: flash, alpha: 0, duration: 120, onComplete: () => flash.destroy() });
     });
   }
 

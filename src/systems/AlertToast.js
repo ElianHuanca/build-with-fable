@@ -116,6 +116,7 @@ export class AlertToast {
     const wrapW = w - PADDING * 2 - ICONO - GAP_ICONO;
     this.texto.setWordWrapWidth(Math.max(10, wrapW), true);
     const h = Math.max(ICONO + PADDING, this.texto.height + PADDING * 1.4);
+    this.alto = h; // lo lee GameScene.actualizarEvitar para bajar el cartel de detección debajo del banner
 
     this.bg.clear();
     this.bg.fillStyle(hex(PALETTE.marino), 0.96).fillRoundedRect(-w / 2, 0, w, h, RADIO);

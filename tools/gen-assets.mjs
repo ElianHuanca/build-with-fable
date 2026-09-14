@@ -909,7 +909,7 @@ function logoSVG() {
       ${t('INVADERS', 330, 250, 60, 'url(#gb)', P.linea, 10, 'letter-spacing="6"')}
       ${t('2D', 590, 250, 40, P.blanco, P.linea, 8)}
     </g>
-    <text x="330" y="288" text-anchor="middle" font-size="24" font-family="Arial, 'DejaVu Sans', sans-serif" font-weight="bold" fill="${P.blanco}" stroke="${P.linea}" stroke-width="5" stroke-linejoin="round" paint-order="stroke">¡Juntos contra el dengue!</text>
+    <!-- El lema "¡Juntos contra el dengue!" ya no va horneado: lo dibuja MenuScene con i18n. -->
     ${mosquitoSVG(62, 56, 0.85)}
     ${noSignSVG(68, 56, 46)}
   `);

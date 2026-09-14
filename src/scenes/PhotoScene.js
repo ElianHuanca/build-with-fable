@@ -77,7 +77,10 @@ export class PhotoScene extends Phaser.Scene {
     }
 
     // Botón cámara circular blanco
-    const camY = frameBottom + 46;
+    // Sin sitio bajo los marcos (horizontal de poca altura, availH al mínimo de 200): el botón iría
+    // sobre Volver/Compartir; en ese caso va en el hueco entre los dos marcos (80 px, botón de 68).
+    let camY = frameBottom + 46;
+    if (!portrait && camY + 34 > H - 50 - 26 - 6) camY = fyAntes;
     const cam = this.add.container(cx, camY);
     const cg = this.add.graphics();
     const drawCam = (col) => {

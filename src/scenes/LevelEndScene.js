@@ -101,6 +101,16 @@ export class LevelEndScene extends Phaser.Scene {
     Layout.onResize(this, (w, h) => this.layout(w, h));
     this.input.keyboard?.on('keydown-ENTER', () => this.finish('nivel:continuar'));
     this.input.keyboard?.on('keydown-SPACE', () => this.finish('nivel:continuar'));
+    // Arrastre vertical / rueda cuando el contenido no cabe (scrollMax > 0, ver layout).
+    let arrastreY = null;
+    this.input.on('pointerdown', (p) => { arrastreY = p.y; });
+    this.input.on('pointermove', (p) => {
+      if (arrastreY === null || !p.isDown) return;
+      this.desplazar(p.y - arrastreY);
+      arrastreY = p.y;
+    });
+    this.input.on('pointerup', () => { arrastreY = null; });
+    this.input.on('wheel', (p, objs, dx, dy) => this.desplazar(-dy * 0.5));
   }
 
   /**
@@ -118,7 +128,8 @@ export class LevelEndScene extends Phaser.Scene {
     const primeraVez = !this.laidOutOnce;
     this.laidOutOnce = true;
 
-    root.add(this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.55).setInteractive());
+    // 0.7: con 0.55 la pregunta del quiz y los datos (texto azul/gris) se perdían sobre cebras y calles.
+    root.add(this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.7).setInteractive());
 
     const content = this.add.container(0, 0);
     this.content = content;
@@ -199,7 +210,8 @@ export class LevelEndScene extends Phaser.Scene {
     y = by + barH / 2 + 26;
 
     // Panel resumen
-    const pw = 320, ph = 118;
+    // 3 líneas a 42 px: con 118 de alto la última ("Tiempo") quedaba sobre el borde inferior.
+    const pw = 320, ph = 136;
     const py = y + ph / 2;
     const panel = this.add.graphics();
     panel.fillStyle(hex(PALETTE.marino), 0.95).fillRoundedRect(-pw / 2, py - ph / 2, pw, ph, 14);
@@ -284,6 +296,16 @@ export class LevelEndScene extends Phaser.Scene {
     const scale = Phaser.Math.Clamp(Math.min(availW / REF_W, availH / contentH), 0.45, 1);
     content.setScale(scale);
     content.setPosition(W / 2, Math.max(safe.top, (H - contentH * scale) / 2));
+    // Si ni con la escala mínima cabe (horizontal táctil de poca altura, p. ej. 851×393), el
+    // contenido se desplaza arrastrando o con la rueda: el quiz y los botones deben ser alcanzables.
+    this.scrollTop = content.y;
+    this.scrollMax = Math.max(0, contentH * scale - availH);
+  }
+
+  /** Desplaza el contenido `dy` px (solo cuando no cabe, ver layout). */
+  desplazar(dy) {
+    if (!this.scrollMax || !this.content) return;
+    this.content.y = Phaser.Math.Clamp(this.content.y + dy, this.scrollTop - this.scrollMax, this.scrollTop);
   }
 
   /** Pregunta + 4 opciones; si ya se había respondido (por ejemplo tras un resize), reaplica el estado. */
