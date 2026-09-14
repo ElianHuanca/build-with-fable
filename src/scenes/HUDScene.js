@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { esModoTactil, touchSize } from '../data/ui.js';
 import { Layout } from '../systems/Layout.js';
+import { t } from '../i18n/index.js';
 
 const FONT = 'Arial, sans-serif';
 const MARGEN = 12;
@@ -96,8 +97,8 @@ export class HUDScene extends Phaser.Scene {
     this.crearPanelJugador(Layout.isPortrait(this));
     this.crearPanelMisiones();
     this.crearMisionLinea();
-    this.barrio = this.crearPanelBarra('Barrio protegido', PALETTE.celeste, PALETTE.verde, true);
-    this.epidemia = this.crearPanelBarra('Riesgo de epidemia', ROJO_EPIDEMIA, null, false);
+    this.barrio = this.crearPanelBarra(t('hud.barrio'), PALETTE.celeste, PALETTE.verde, true);
+    this.epidemia = this.crearPanelBarra(t('hud.riesgo'), ROJO_EPIDEMIA, null, false);
     this.crearPanelCentro();
     this.crearDato();
 
@@ -106,8 +107,12 @@ export class HUDScene extends Phaser.Scene {
     if (this.onChange) this.registry.events.off('changedata', this.onChange);
     this.onChange = (parent, key, value) => this.aplicar(key, value);
     this.registry.events.on('changedata', this.onChange);
+    // Cambio de idioma: etiquetas estáticas (GameScene republica zona y misiones por su cuenta).
+    this.onLang = () => this.aplicarIdioma();
+    this.game.events.on('lang', this.onLang);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.registry.events.off('changedata', this.onChange);
+      this.game.events.off('lang', this.onLang);
       if (this.datoTimer) this.datoTimer.remove();
       if (this.misionesTimer) this.misionesTimer.remove();
     });
@@ -195,7 +200,7 @@ export class HUDScene extends Phaser.Scene {
     const bg = this.panel(this.add.graphics(), cfg.w, h);
     const retrato = this.crearRetrato(pad + RETRATO / 2, h / 2, RETRATO);
     const tx = pad + RETRATO + (compacto ? 8 : 12);
-    this.puntosText = this.texto(tx, compacto ? 7 : 12, `Puntos: ${this.estado.puntos ?? 0}`, cfg.puntos);
+    this.puntosText = this.texto(tx, compacto ? 7 : 12, t('hud.puntos', { n: this.estado.puntos ?? 0 }), cfg.puntos);
 
     this.estrellas = [];
     this.starR = STAR_R;
@@ -222,7 +227,7 @@ export class HUDScene extends Phaser.Scene {
   crearPanelMisiones() {
     this.misionesPanel = this.add.container(MARGEN, MARGEN + this.jugadorH + 8).setDepth(DEPTH_PANEL + 1);
     this.misionesBg = this.add.graphics();
-    this.misionesTitulo = this.texto(12, 8, 'Misiones:', 16, { color: PALETTE.celeste });
+    this.misionesTitulo = this.texto(12, 8, t('hud.misiones'), 16, { color: PALETTE.celeste });
     this.misionesFlecha = this.texto(0, 8, '▾', 16, { color: PALETTE.celeste }).setOrigin(1, 0);
     this.misionesPanel.add([this.misionesBg, this.misionesTitulo, this.misionesFlecha]);
     this.misionesItems = []; // {check, texto, progreso}
@@ -312,8 +317,8 @@ export class HUDScene extends Phaser.Scene {
     if (this.misionLineaText) {
       const todas = todasLista.length > 0 && todasLista.every((m) => m.hecho);
       let linea = '';
-      if (activaM) linea = `Misión: ${activaM.texto}${activaM.progreso ? ' ' + activaM.progreso : ''}`;
-      else if (todas) linea = 'Misiones completas';
+      if (activaM) linea = t('hud.mision', { texto: activaM.texto }) + (activaM.progreso ? ' ' + activaM.progreso : '');
+      else if (todas) linea = t('hud.misionesCompletas');
       this.misionLineaText.setText(linea);
       this.renderMisionLinea();
     }
@@ -408,8 +413,8 @@ export class HUDScene extends Phaser.Scene {
     this.centroBg = this.add.graphics();
     this.relojText = this.texto(0, 6, '00:00', 20, { align: 'center' }).setOrigin(0.5, 0);
     this.finas = {
-      protegido: this.crearBarraFina('Barrio protegido', PALETTE.verde, null),
-      riesgo: this.crearBarraFina('Riesgo de epidemia', ROJO_EPIDEMIA, 'Riesgo epidemia'),
+      protegido: this.crearBarraFina(t('hud.barrio'), PALETTE.verde, t('hud.barrioCorto')),
+      riesgo: this.crearBarraFina(t('hud.riesgo'), ROJO_EPIDEMIA, t('hud.riesgoCorto')),
     };
     this.centro.add([this.centroBg, this.relojText, this.finas.protegido.c, this.finas.riesgo.c]);
     this.centroW = 0; this.centroH = 0;
@@ -645,7 +650,7 @@ export class HUDScene extends Phaser.Scene {
     this.estado[key] = value;
     switch (key) {
       case 'puntos':
-        this.puntosText.setText(`Puntos: ${value ?? 0}`);
+        this.puntosText.setText(t('hud.puntos', { n: value ?? 0 }));
         if (prev !== undefined && value > prev) this.flashPuntos();
         break;
       case 'estrellas': this.renderEstrellas(); break;
@@ -661,6 +666,20 @@ export class HUDScene extends Phaser.Scene {
       case 'epidemia': this.animarBarraEpidemia(value); break;
       default: break;
     }
+  }
+
+  /** Vuelve a escribir las etiquetas estáticas en el idioma actual (game.events 'lang'). */
+  aplicarIdioma() {
+    if (!this.viva()) return;
+    this.puntosText.setText(t('hud.puntos', { n: this.estado.puntos ?? 0 }));
+    this.misionesTitulo.setText(t('hud.misiones'));
+    this.barrio.titulo.setText(t('hud.barrio'));
+    this.epidemia.titulo.setText(t('hud.riesgo'));
+    this.finas.protegido.label = t('hud.barrio'); this.finas.protegido.labelCorto = t('hud.barrioCorto');
+    this.finas.riesgo.label = t('hud.riesgo'); this.finas.riesgo.labelCorto = t('hud.riesgoCorto');
+    const e = Phaser.Math.Clamp(Number(this.estado.epidemia) || 0, 0, 100);
+    this.epidemia.pieIzq.setText(e >= UMBRAL_RIESGO ? t('hud.enRiesgo') : '');
+    this.reposicionar(this.scale.width, this.scale.height);
   }
 
   setReloj(seg) {
@@ -686,7 +705,7 @@ export class HUDScene extends Phaser.Scene {
   }
 
   refrescarTodo() {
-    this.puntosText.setText(`Puntos: ${this.estado.puntos ?? 0}`);
+    this.puntosText.setText(t('hud.puntos', { n: this.estado.puntos ?? 0 }));
     this.renderEstrellas();
     this.renderMisiones();
     const p = this.estado.progreso ?? (this.estado.total ? this.estado.limpios / this.estado.total : 0);
@@ -696,7 +715,7 @@ export class HUDScene extends Phaser.Scene {
 
     const e = Phaser.Math.Clamp(Number(this.estado.epidemia) || 0, 0, 100);
     this.pintarEpidemia(e / 100);
-    this.epidemia.pieIzq.setText(e >= UMBRAL_RIESGO ? '¡El barrio está en riesgo!' : '');
+    this.epidemia.pieIzq.setText(e >= UMBRAL_RIESGO ? t('hud.enRiesgo') : '');
     this.manejarPulsoEpidemia(e);
   }
 
@@ -719,7 +738,7 @@ export class HUDScene extends Phaser.Scene {
   animarBarraEpidemia(objetivo) {
     const dest = Phaser.Math.Clamp(Number(objetivo) || 0, 0, 100);
     this.manejarPulsoEpidemia(dest);
-    this.epidemia.pieIzq.setText(dest >= UMBRAL_RIESGO ? '¡El barrio está en riesgo!' : '');
+    this.epidemia.pieIzq.setText(dest >= UMBRAL_RIESGO ? t('hud.enRiesgo') : '');
     if (this.epiBarraTween) this.epiBarraTween.stop();
     const from = { v: this.epiValor * 100 };
     this.epiBarraTween = this.tweens.add({

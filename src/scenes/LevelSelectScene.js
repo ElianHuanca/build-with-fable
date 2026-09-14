@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
-import { LEVELS } from '../data/levels.js';
+import * as Levels from '../data/levels.js';
 import * as Save from '../systems/SaveSystem.js';
-import { makeButton, sfx } from './MenuScene.js';
+import { makeButton, sfx, fitText } from './MenuScene.js';
 import { Layout } from '../systems/Layout.js';
 import { Badges } from '../systems/Badges.js';
 import { INSIGNIAS } from '../data/library.js';
@@ -12,6 +12,13 @@ const FONT = 'Arial, sans-serif';
 const CARD_W = 300;
 const CARD_H = 340;
 const CARD_R = 16;
+const LEVELS = Levels.LEVELS;
+
+/** Nombre del nivel en el idioma actual (nombreNivel de levels.js si existe; si no, lvl.nombre). */
+function nombreDeNivel(lvl) {
+  if (typeof Levels.nombreNivel === 'function') return Levels.nombreNivel(lvl);
+  return typeof lvl.nombre === 'string' ? lvl.nombre : (lvl.nombre?.es ?? lvl.id);
+}
 
 /**
  * Lee el progreso de un nivel tolerando ambas formas de SaveSystem:
@@ -46,6 +53,9 @@ export class LevelSelectScene extends Phaser.Scene {
 
   create() {
     Layout.onResize(this, (w, h) => this.layout(w, h));
+    const onLang = () => this.layout(this.scale.width, this.scale.height);
+    this.game.events.on('lang', onLang);
+    this.events.once('shutdown', () => this.game.events.off('lang', onLang));
     this.input.keyboard?.once('keydown-ESC', () => { sfx(this, 'click'); this.scene.start('Menu'); });
   }
 
@@ -65,10 +75,12 @@ export class LevelSelectScene extends Phaser.Scene {
     bg.fillRect(0, 0, W, H);
     bg.fillStyle(hex(PALETTE.marino), 0.85).fillRect(0, 0, W, TITLE_H);
     root.add(bg);
-    root.add(this.add.text(W / 2, TITLE_H / 2, 'Selecciona un nivel', {
+    const titulo = this.add.text(W / 2, TITLE_H / 2, t('sel.titulo'), {
       fontFamily: FONT, fontSize: 30, fontStyle: 'bold', color: PALETTE.blanco,
       stroke: PALETTE.linea, strokeThickness: 5,
-    }).setOrigin(0.5));
+    }).setOrigin(0.5);
+    fitText(titulo, W - 40, 30);
+    root.add(titulo);
 
     const safe = Layout.safe(this);
     const availW = W - safe.left - safe.right;
@@ -109,7 +121,7 @@ export class LevelSelectScene extends Phaser.Scene {
 
     // Volver
     root.add(makeButton(this, {
-      x: 90, y: H - 40, w: 150, h: 50, label: '◀ Volver', fontSize: 18,
+      x: 90, y: H - 40, w: 150, h: 50, label: t('sel.volver'), fontSize: 18,
       color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro,
       onClick: () => this.scene.start('Menu'),
     }));
@@ -168,9 +180,11 @@ export class LevelSelectScene extends Phaser.Scene {
     c.add(this.crearMiniatura(lvl, thumbW, thumbH, thumbY));
 
     // Nombre
-    c.add(this.add.text(0, thumbY + thumbH / 2 + 26, lvl.nombre, {
+    const nombre = this.add.text(0, thumbY + thumbH / 2 + 26, nombreDeNivel(lvl), {
       fontFamily: FONT, fontSize: 26, fontStyle: 'bold', color: PALETTE.azulGorra,
-    }).setOrigin(0.5));
+    }).setOrigin(0.5);
+    fitText(nombre, CARD_W - 32, 26);
+    c.add(nombre);
 
     // Estrellas y mejor tiempo
     const prog = lvl.bloqueado ? null : getProgreso(lvl.id);
@@ -179,7 +193,7 @@ export class LevelSelectScene extends Phaser.Scene {
     for (let i = 0; i < 4; i++) c.add(this.crearEstrella(-45 + i * 30, starY, i < estrellas));
     const mejor = fmtTiempo(prog?.mejorTiempo);
     if (mejor) {
-      c.add(this.add.text(0, starY + 24, `Mejor: ${mejor}`, {
+      c.add(this.add.text(0, starY + 24, t('sel.mejor', { t: mejor }), {
         fontFamily: FONT, fontSize: 14, color: PALETTE.gris,
       }).setOrigin(0.5));
     }
@@ -188,14 +202,14 @@ export class LevelSelectScene extends Phaser.Scene {
     const btnY = CARD_H / 2 - 40;
     if (lvl.bloqueado) {
       const btn = makeButton(this, {
-        x: 0, y: btnY, w: 200, h: 48, label: 'Bloqueado', fontSize: 20, icon: 'icon_lock',
+        x: 0, y: btnY, w: 200, h: 48, label: t('sel.bloqueado'), fontSize: 20, icon: 'icon_lock',
         color: PALETTE.grisClaro, colorHover: PALETTE.grisClaro, disabled: true,
       });
       if (!this.textures.exists('icon_lock')) { btn.label.setX(12); btn.add(this.crearCandado(-68, 0)); }
       c.add(btn);
     } else {
       c.add(makeButton(this, {
-        x: 0, y: btnY, w: 200, h: 52, label: 'Jugar', fontSize: 22,
+        x: 0, y: btnY, w: 200, h: 52, label: t('sel.jugar'), fontSize: 22,
         color: PALETTE.verde, colorHover: PALETTE.verdeOscuro,
         onClick: () => this.scene.start('Game', { levelId: lvl.id }),
       }));

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
-import { FACTS } from '../data/facts.js';
+import * as Facts from '../data/facts.js';
+import { t, tx as loc } from '../i18n/index.js';
 import { touchSize } from '../data/ui.js';
 import { Layout } from '../systems/Layout.js';
 
@@ -18,7 +19,11 @@ export class PopupScene extends Phaser.Scene {
 
   init(data) {
     this.type = data?.type ?? 'llanta';
-    this.fact = FACTS[this.type] ?? FACTS.llanta;
+    // factsL() (facts.js) devuelve los datos del idioma actual; si no existe aún, cae a FACTS.
+    const facts = (typeof Facts.factsL === 'function' ? Facts.factsL() : null) || Facts.FACTS;
+    const f = facts[this.type] ?? facts.llanta;
+    // Tolera campos string o { es, en }.
+    this.fact = { nombre: loc(f.nombre), dato: loc(f.dato), consejo: loc(f.consejo), fuente: loc(f.fuente) };
     this.closing = false;
   }
 
@@ -42,27 +47,27 @@ export class PopupScene extends Phaser.Scene {
     // Fondo oscurecido que bloquea clics
     root.add(this.add.rectangle(cx, cy, W, H, 0x000000, 0.45).setInteractive());
 
-    // Ancho relativo: min(ancho − márgenes, CARD_W). El resto de la maqueta se deriva de este valor,
-    // así el diseño se achica sin romperse en pantallas angostas (vertical) en vez de desbordar.
+    // Ancho relativo: min(ancho − márgenes, CARD_W). En tarjetas angostas (vertical) el texto va
+    // debajo del cuadro y la altura crece con el contenido (los textos en inglés son más largos).
     const cardW = Layout.panelWidth(this, CARD_W);
-    const cardH = Math.min(CARD_H, H - 2 * Layout.MARGIN * 2);
+    const maxH = H - 2 * Layout.MARGIN * 2;
+    const boxS = 150, pad = 26, top = 34;
+    const apilado = cardW - pad * 2 - boxS - 22 < 190;
 
+    // Se arma en coordenadas desde la esquina superior izquierda (inner) y al final se centra.
     this.card = this.add.container(cx, cy).setScale(0.8).setAlpha(0);
     root.add(this.card);
-
-    // Tarjeta
+    const inner = this.add.container(0, 0);
     const bg = this.add.graphics();
-    bg.fillStyle(0x000000, 0.25).fillRoundedRect(-cardW / 2 + 6, -cardH / 2 + 8, cardW, cardH, 18);
-    bg.fillStyle(hex(PALETTE.blanco), 1).fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 18);
-    bg.lineStyle(5, hex(PALETTE.marino), 1).strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 18);
-    this.card.add(bg);
+    this.card.add([bg, inner]);
+    const addInner = (obj) => { inner.add(obj); return obj; };
 
     // Cuadro con el sprite del criadero
-    const boxX = -cardW / 2 + 26, boxY = -cardH / 2 + 40, boxS = 150;
+    const boxX = pad, boxY = apilado ? top + 44 : top + 6;
     const box = this.add.graphics();
     box.fillStyle(hex(PALETTE.celeste), 0.35).fillRoundedRect(boxX, boxY, boxS, boxS, 12);
     box.lineStyle(3, hex(PALETTE.marino), 1).strokeRoundedRect(boxX, boxY, boxS, boxS, 12);
-    this.card.add(box);
+    addInner(box);
     const imgKey = `${this.type}_agua`;
     if (this.textures.exists(imgKey)) {
       const img = this.add.image(boxX + boxS / 2, boxY + boxS / 2, imgKey).setScale(1.6);
@@ -70,35 +75,47 @@ export class PopupScene extends Phaser.Scene {
       if (img.displayWidth > maxS || img.displayHeight > maxS) {
         img.setScale(Math.min(maxS / img.width, maxS / img.height));
       }
-      this.card.add(img);
+      addInner(img);
     } else {
-      this.card.add(this.add.text(boxX + boxS / 2, boxY + boxS / 2, '?', {
+      addInner(this.add.text(boxX + boxS / 2, boxY + boxS / 2, '?', {
         fontFamily: FONT, fontSize: 48, fontStyle: 'bold', color: PALETTE.marino,
       }).setOrigin(0.5));
     }
 
-    // Texto a la derecha (o abajo si el cuadro no deja sitio en pantallas muy angostas)
-    const tx = boxX + boxS + 22;
-    const textW = cardW / 2 - 24 - tx;
-    let y = -cardH / 2 + 34;
+    // Texto a la derecha del cuadro, o debajo si la tarjeta es angosta
+    const tx = apilado ? pad : boxX + boxS + 22;
+    const textW = cardW - pad - tx;
+    let y = top;
     const title = this.add.text(tx, y, this.fact.nombre, {
       fontFamily: FONT, fontSize: 30, fontStyle: 'bold', color: ROJO,
     });
-    this.card.add(title);
-    y += title.height + 8;
+    if (title.width > textW) title.setFontSize(Math.max(20, Math.floor(30 * textW / title.width)));
+    addInner(title);
+    y = apilado ? boxY + boxS + 14 : y + title.height + 8;
 
-    y = this.addRichText(this.fact.dato, tx, y, textW, 17, PALETTE.marino) + 8;
-    const consejo = this.add.text(tx, y, this.fact.consejo, {
+    const sizeDato = apilado ? 16 : 17;
+    y = this.addRichText(inner, this.fact.dato, tx, y, textW, sizeDato, PALETTE.marino) + 8;
+    const consejo = addInner(this.add.text(tx, y, this.fact.consejo, {
       fontFamily: FONT, fontSize: 15, color: PALETTE.gris, wordWrap: { width: textW },
-    });
-    this.card.add(consejo);
-    y += consejo.height + 6;
-    this.card.add(this.add.text(tx, y, `Fuente: ${this.fact.fuente}`, {
-      fontFamily: FONT, fontSize: 13, color: PALETTE.grisClaro,
     }));
+    y += consejo.height + 6;
+    const fuente = addInner(this.add.text(tx, y, t('popup.fuente', { f: this.fact.fuente }), {
+      fontFamily: FONT, fontSize: 13, color: PALETTE.grisClaro, wordWrap: { width: textW },
+    }));
+    y += fuente.height + 14;
+
+    // Alto: el contenido más el botón, sin bajar de CARD_H ni exceder la pantalla.
+    const btnH = 52;
+    const cardH = Math.min(maxH, Math.max(CARD_H, y + btnH + 28));
+    inner.setPosition(-cardW / 2, -cardH / 2);
+
+    // Tarjeta (dibujada ya con la altura definitiva, detrás del contenido)
+    bg.fillStyle(0x000000, 0.25).fillRoundedRect(-cardW / 2 + 6, -cardH / 2 + 8, cardW, cardH, 18);
+    bg.fillStyle(hex(PALETTE.blanco), 1).fillRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 18);
+    bg.lineStyle(5, hex(PALETTE.marino), 1).strokeRoundedRect(-cardW / 2, -cardH / 2, cardW, cardH, 18);
 
     // Botón ¡Genial!
-    this.card.add(this.makeButton(0, cardH / 2 - 40, 220, 52, '¡Genial!', PALETTE.verde, PALETTE.verdeOscuro, () => this.close()));
+    this.card.add(this.makeButton(0, cardH / 2 - 40, Math.min(220, cardW - 60), btnH, t('popup.genial'), PALETTE.verde, PALETTE.verdeOscuro, () => this.close()));
 
     // Botón X
     const xBtn = this.add.container(cardW / 2 - 6, -cardH / 2 + 6);
@@ -118,7 +135,7 @@ export class PopupScene extends Phaser.Scene {
   }
 
   /** Texto con las palabras que contienen dígitos en negrita (token a token, con salto de línea). */
-  addRichText(text, x, y, maxW, size, color) {
+  addRichText(parent, text, x, y, maxW, size, color) {
     const tokens = text.split(' ');
     let cx = x, cy = y, lineH = 0;
     for (const tok of tokens) {
@@ -130,7 +147,7 @@ export class PopupScene extends Phaser.Scene {
       t.setPosition(cx, cy);
       cx += t.width;
       lineH = Math.max(lineH, t.height);
-      this.card.add(t);
+      parent.add(t);
     }
     return cy + lineH;
   }
@@ -148,6 +165,7 @@ export class PopupScene extends Phaser.Scene {
     const t = this.add.text(0, 0, label, {
       fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5);
+    if (t.width > w - 24) t.setFontSize(Math.max(12, Math.floor(20 * (w - 24) / t.width))); // etiquetas largas (EN)
     c.add([g, t]).setSize(...touchSize(w, h)).setInteractive({ useHandCursor: true })
       .on('pointerover', () => draw(hover))
       .on('pointerout', () => draw(color))

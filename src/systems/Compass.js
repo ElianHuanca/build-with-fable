@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
+import { t } from '../i18n/index.js';
 
 const DEPTH = 9000;
 const RADIO_ORBITA = 56;
@@ -34,6 +35,9 @@ export class Compass {
       .setRotation(ang)
       .setVisible(true);
   }
+
+  /** Etiqueta de distancia ("N m") para quien la muestre junto a la flecha. */
+  static distanciaTexto(px) { return t('compass.metros', { n: Math.round((Number(px) || 0) / 64) }); }
 
   /** Nodos a ocultar en las fotos (GameScene.capturar): sin esto la flecha salía en la captura. */
   overlays() { return [this.flecha]; }

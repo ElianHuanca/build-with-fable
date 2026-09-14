@@ -3,6 +3,7 @@ import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
 import { Layout } from './Layout.js';
 import { HUD_KEY_LIBRE } from '../scenes/HUDScene.js';
+import { t } from '../i18n/index.js';
 
 const PANEL_W = 260;
 const PANEL_H = 100;
@@ -53,7 +54,7 @@ export class InteractionPrompt {
       fontFamily: 'Arial, sans-serif', fontSize: 20, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5, 0.55);
 
-    this.title = scene.add.text(iconX + 22, iconY, '¡Criadero detectado!', {
+    this.title = scene.add.text(iconX + 22, iconY, t('prompt.criadero'), {
       fontFamily: 'Arial, sans-serif', fontSize: 18, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0, 0.5);
     const title = this.title;
@@ -68,7 +69,7 @@ export class InteractionPrompt {
     const keyText = scene.add.text(-BTN_W / 2 + 22, 0, 'E', {
       fontFamily: 'Arial, sans-serif', fontSize: 15, fontStyle: 'bold', color: PALETTE.verdeOscuro,
     }).setOrigin(0.5);
-    this.label = scene.add.text(-BTN_W / 2 + 44, 0, 'Eliminar agua', {
+    this.label = scene.add.text(-BTN_W / 2 + 44, 0, t('prompt.eliminar'), {
       fontFamily: 'Arial, sans-serif', fontSize: 16, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0, 0.5);
     this.button.add([this.btnBg, keyBox, keyText, this.label]);
@@ -86,7 +87,7 @@ export class InteractionPrompt {
     if (this.sinBoton) {
       // El botón de acción vive en TouchControls: aquí solo una pista de texto.
       this.button.setVisible(false).disableInteractive();
-      this.hint = scene.add.text(0, btnY, 'Toca el botón de acción', {
+      this.hint = scene.add.text(0, btnY, t('prompt.tocaBoton'), {
         fontFamily: 'Arial, sans-serif', fontSize: 15, fontStyle: 'bold', color: PALETTE.amarillo,
       }).setOrigin(0.5);
       this.container.add(this.hint);
@@ -169,11 +170,11 @@ export class InteractionPrompt {
     this.modo = modo;
     const brote = modo === 'brote';
     const estacion = modo === 'estacion';
-    this.title.setText(estacion ? 'Estación SEDES' : brote ? '¡Brote de mosquitos!' : '¡Criadero detectado!');
-    this.label.setText(estacion ? 'Biblioteca' : brote ? 'Fumigar' : 'Eliminar agua');
-    const etiqueta = this.sinBoton ? 'Toca el botón'
-      : this.isTouch ? (estacion ? 'Toca Biblioteca' : brote ? 'Toca Fumigar' : 'Toca Eliminar')
-        : (brote ? 'Mantén E' : 'Presiona E');
+    this.title.setText(t(estacion ? 'prompt.estacion' : brote ? 'prompt.brote' : 'prompt.criadero'));
+    this.label.setText(t(estacion ? 'prompt.biblioteca' : brote ? 'prompt.fumigar' : 'prompt.eliminar'));
+    const etiqueta = t(this.sinBoton ? 'prompt.tocaBotonCorto'
+      : this.isTouch ? (estacion ? 'prompt.tocaBiblioteca' : brote ? 'prompt.tocaFumigar' : 'prompt.tocaEliminar')
+        : (brote ? 'prompt.mantenE' : 'prompt.presionaE'));
     this.worldText.setText(etiqueta);
     const lw = this.worldText.width + 14, lh = this.worldText.height + 8;
     this.worldBg.clear();

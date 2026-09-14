@@ -1,10 +1,12 @@
-# GDD — Dengue Invaders 2D: Agente SEDES (v2)
+# GDD — Dengue Invaders 2D: Agente SEDES (v2 + v3)
 
 Documento de diseño de juego: las reglas de la jornada tal como quedaron implementadas en el
-código (no el plan original). Parte de [PLAN_V2_JUGABILIDAD.md](PLAN_V2_JUGABILIDAD.md), pero
-ajusta números y detalles a lo que el juego realmente hace hoy; los contratos técnicos (eventos,
-registry, constantes) están en [ARQUITECTURA.md](ARQUITECTURA.md) sección 2.6, y el estado de cada
-pieza en [PROGRESO.md](PROGRESO.md).
+código (no el plan original). Parte de [PLAN_V2_JUGABILIDAD.md](PLAN_V2_JUGABILIDAD.md) y
+[PLAN_V3_BIBLIOTECA_IA.md](PLAN_V3_BIBLIOTECA_IA.md), pero ajusta números y detalles a lo que el
+juego realmente hace hoy; los contratos técnicos (eventos, registry, constantes) están en
+[ARQUITECTURA.md](ARQUITECTURA.md) secciones 2.6 (v2) y 2.7 (v3), y el estado de cada pieza en
+[PROGRESO.md](PROGRESO.md). Las secciones 1–10 describen la jornada v2; las 11–15, lo que suma la v3
+(Biblioteca SEDES, cámara IA, enjambres, visibilidad e idiomas).
 
 ## 1. Fantasía y rol
 
@@ -54,9 +56,10 @@ Un brote tiene 3 niveles, y crece solo mientras nadie lo fumiga:
 
 **Fumigar** un brote: acercarse (radio de detección 90 px, el mismo cartel/botón de acción que los
 criaderos, con prioridad para el criadero si ambos están en rango) y presionar `E` / tocar el
-botón — un solo toque, no hace falta mantenerlo presionado. La fumigación corre sola durante 2,5 s
-a pie o 1,5 s subido a la camioneta: una nube de espray rodea al brote mientras este se desvanece,
-y el jugador queda bloqueado hasta que termina. Al terminar: suma los puntos de la tabla de arriba,
+botón. En la v2 era un solo toque; desde la v3 con `E`/ACCIÓN hay que **mantener presionado** y
+soltar cancela (ver §13). La fumigación dura 2,5 s a pie o 1,5 s subido a la camioneta (×1,5 si el
+brote es grande): el rociador lanza un cono de niebla y los mosquitos van cayendo, y el jugador
+queda bloqueado hasta que termina. Al terminar: suma los puntos de la tabla de arriba,
 baja el medidor de epidemia y muestra un consejo corto (por ejemplo, que la fumigación no mata las
 larvas, solo al mosquito adulto).
 
@@ -139,7 +142,139 @@ juego). Al terminar la jornada, el resumen agrega los 3 datos al azar y 1 pregun
 
 ## 10. Diferencias con el plan original
 
-Para no repetir aquí lo que ya está detallado en `docs/PROGRESO.md` (v2 · Ola 2): fumigar un brote
-es un solo toque (no "mantener presionado 2,5 s" como decía el plan), el tip de la estación se
-muestra como dato del HUD y no como popup modal, y las misiones del HUD siguen siendo las 4 del v1
-— no hay ninguna misión nueva de brotes, estación o camioneta pese a que el plan la mencionaba.
+Para no repetir aquí lo que ya está detallado en `docs/PROGRESO.md` (v2 · Ola 2): el tip de la
+estación se muestra como dato del HUD y no como popup modal, y las misiones del HUD siguen siendo
+las 4 del v1 — no hay ninguna misión nueva de brotes, estación o camioneta pese a que el plan la
+mencionaba. La regla "fumigar es un solo toque" de la v2 cambió en la v3: ver §13.
+
+---
+
+## 11. Biblioteca SEDES (v3)
+
+La **estación** deja de ser solo el garaje de la camioneta: al acercarse y presionar `E` / el botón
+ACCIÓN (el cartel de detección cambia a modo "estación") se abre la **Biblioteca SEDES**, una
+pantalla de tarjetas de aprendizaje que pausa la jornada (física detenida, HUD y controles
+ocultos, el reloj no avanza) y la reanuda al cerrar con `Esc` o el botón Volver. También está
+disponible desde el **menú principal** ("Biblioteca") para quien solo quiere leer, sin jornada.
+
+**Pestañas** (una fila de botones con ícono; se cambian tocando o con las flechas del carrusel):
+
+| Pestaña | Tarjetas | Qué enseña |
+|---|---|---|
+| Mosquitos | 4 fichas de especie | Ilustración grande, nombre común y científico, chips "cómo reconocerlo", qué transmite, dónde cría, a qué hora pica y un dato curioso |
+| Ciclo de vida | 4 (huevo, larva, pupa, adulto) | Cuánto dura cada etapa y **dónde cortar el ciclo** (cepillar paredes, vaciar, botar el agua a la tierra) |
+| Síntomas | tarjetas "info" | Fiebre, dolor detrás de los ojos, sarpullido; señales de alarma; no automedicarse; ir al centro de salud |
+| Prevención | tarjetas "info" | Limpieza por tipo de criadero, descacharrado, repelente, ropa |
+| Mitos | 6 tarjetas que se voltean | Frente rojo "MITO", dorso verde "VERDAD" |
+
+**Tarjetas.** Una sola tarjeta grande a la vez; se navega con las flechas laterales, las teclas
+← / →, o deslizando horizontalmente (umbral 50 px). En la pestaña Mitos, un toque corto (o
+`Espacio`/`Enter`) voltea la tarjeta. Cada tarjeta que se muestra queda marcada como **leída** y
+se recuerda entre sesiones.
+
+**Insignias.** Cuatro, guardadas en el dispositivo y mostradas en una fila bajo el título de la
+selección de nivel (en color las ganadas, en gris las pendientes) y dentro de la Biblioteca:
+
+| Insignia | Se gana al… |
+|---|---|
+| Explorador | leer 5 tarjetas (de cualquier pestaña) |
+| Detective de larvas | leer las 4 fichas de especie |
+| Guardián del barrio | leer todas las tarjetas de todas las pestañas |
+| Fotógrafo | identificar un mosquito con la cámara IA (§12) |
+
+Al ganar una, la Biblioteca lo celebra en pantalla; si es la de Fotógrafo, el aviso llega al volver
+al juego desde la cámara.
+
+**Bonus de estudio.** La Biblioteca cuenta las tarjetas **nuevas** leídas desde la última jornada.
+Si al empezar una jornada hay 5 o más, el jugador recibe **+50 puntos** a los 0,7 s de arrancar
+(aviso "Bonus por estudiar: +50") y el contador vuelve a cero. Leer las mismas tarjetas dos veces no
+cuenta; el bonus es de 50 fijos, no acumulable.
+
+## 12. Cámara con IA (demo simulada)
+
+Botón **CÁMARA** táctil (sobre la lupa) o tecla `C` durante la jornada. **Es una simulación**: no
+hay ningún modelo de reconocimiento de imágenes ni conexión a un servicio; la pantalla lo declara
+con una etiqueta **DEMO**, y así debe presentarse a estudiantes y docentes. Su valor es didáctico:
+enseñar *qué señales* distinguen a cada especie, no reconocerlas de verdad.
+
+Flujo, con la jornada en pausa suave:
+
+1. **Visor.** Se captura un cuadro de 256×256 px del mundo centrado en el brote más cercano si está
+   a menos de **160 px** del agente; si no, centrado en el propio agente (para la demo siempre hay
+   algo que analizar: si ni siquiera hay textura, se dibuja un fondo verde con un enjambre de
+   muestra). Marco con esquinas, retícula y el consejo "Apunta a un mosquito". Disparar con el
+   botón, `Espacio` o `Enter`.
+2. **Análisis (~2,2 s).** Flash y clic de obturador, barrido de escáner sobre la foto, 4–6 puntos
+   de referencia que aparecen uno a uno con etiquetas cortas (las "señales" de la especie), barra
+   de confianza que sube y una consola de texto tipo terminal.
+3. **Resultado.** Tarjeta de especie: ilustración, nombre común y científico, **confianza 87–98 %**
+   (fija para esa foto), chips con las señales detectadas ("patas con anillos blancos", "lira
+   blanca en el tórax"…), qué transmite y una recomendación. Botones: guardar en el álbum,
+   ver la ficha en la Biblioteca, cerrar.
+
+Cómo se elige la especie: si la foto fue de un brote, es la especie de ese brote (cada brote nace
+con una al azar); si no, se sortea con los pesos del catálogo — Aedes aegypti 55 %, Aedes
+albopictus 20 %, Culex 18 %, Anopheles 7 % — de modo que el mosquito del dengue es el más habitual
+pero los demás también aparecen para poder compararlos.
+
+**Álbum.** Cada especie guardada se agrega al álbum del dispositivo (máximo 4). La primera foto
+guardada otorga la insignia Fotógrafo; al volver al juego, el HUD avisa "¡Especie identificada!
+<nombre>" (y la insignia, si es nueva). La cámara está bloqueada mientras se limpia un criadero, se
+fumiga o hay otro overlay abierto.
+
+## 13. Enjambres e intensidad de fumigación (v3)
+
+Los brotes dejan de ser un sprite fijo: son **enjambres de mosquitos individuales** que orbitan y
+vibran alrededor de un punto, con un halo rojo cuando el brote es grande. Los tiempos de crecimiento
+y los puntos de §3 no cambian; lo que cambia es la escala visual y el ritual de fumigar:
+
+| Nivel | Mosquitos | Radio de la órbita | Duración de fumigar |
+|---|---|---|---|
+| Pequeño | 8 | 22 px | 2,5 s a pie · 1,5 s en camioneta |
+| Medio | 14 | 32 px | 2,5 s · 1,5 s |
+| Grande | 22 | 44 px | ×1,5: 3,75 s · 2,25 s |
+
+Para cuidar el rendimiento hay un tope de **70 mosquitos en pantalla**: si se alcanza, los brotes
+nuevos nacen con menos individuos (nunca menos de 4).
+
+**Fumigar** ahora se ve así: el agente saca el **rociador** (sprite en la mano, orientado hacia el
+brote; desde la camioneta la niebla sale del tanque trasero), un **cono de niebla** blanca-celeste
+avanza hacia el enjambre, los mosquitos se agitan cada vez más y, a partir del **40 %** del
+progreso, **caen uno a uno** girando (en orden aleatorio, de modo que al 100 % cayeron todos), con
+gotas salpicando y un pulso verde al final; el zumbido baja con ellos. Al terminar, "+75/90/100" y
+el consejo de siempre.
+
+**Mantener vs. un toque.** Con la tecla `E` o el botón ACCIÓN táctil hay que **mantener
+presionado**: soltar antes de tiempo **cancela** la fumigación, la niebla se apaga y el brote sigue
+activo — pero los mosquitos que ya cayeron no vuelven, así que el enjambre queda reducido y el
+siguiente intento arranca con ventaja. Con el clic del botón "Fumigar" del cartel de detección
+(ratón) la fumigación corre sola hasta el final. Esto reemplaza la regla "un solo toque" de la v2.
+
+## 14. Reglas de visibilidad (v3)
+
+El principio: **el HUD nunca debe tapar la acción**. Tres mecanismos, todos automáticos:
+
+- **Cámara con margen.** Los límites de desplazamiento de la cámara se amplían por arriba y por
+  abajo (vertical táctil: 150 px arriba / 250 px abajo; horizontal táctil: 100 / 120; escritorio:
+  100 / 60) para que, incluso en los bordes del mapa, el agente quede centrado en la franja libre
+  entre el HUD y los controles.
+- **Paneles que se apartan.** Diez veces por segundo el juego proyecta a pantalla al agente, a los
+  brotes activos y al criadero detectado; cualquier panel del HUD (retrato, misiones, barrio
+  protegido, riesgo de epidemia, panel central) que los tape baja su opacidad al **25 %** y vuelve
+  al 90 % al despejarse; el minimapa baja al 35 %. Los paneles **no se mueven** de sitio.
+- **Cartel y banner en el lado opuesto.** El cartel de detección ("¡Criadero detectado!",
+  "Fumigar", "Biblioteca") y el banner de tips se colocan arriba si el objetivo está en la mitad
+  inferior de la pantalla, y abajo si está en la superior; si los dos van abajo, el banner se apoya
+  sobre el borde superior del cartel.
+
+Además, en vertical el **panel de misiones** se muestra como una sola línea (la misión actual);
+tocarla lo despliega 3 s y luego se pliega solo.
+
+## 15. Idiomas (v3)
+
+El juego está en **español y en inglés**. El idioma inicial se toma del guardado en el dispositivo
+y, si no hay, del navegador (`en*` → inglés; cualquier otro → español). Se cambia desde el botón de
+idioma del menú principal (etiqueta ES/EN) o desde Configuración, y se guarda para la próxima vez.
+Toda la interfaz, los tips, los datos, el quiz, las fichas de especie y la Biblioteca tienen las
+dos versiones; el contenido educativo se redactó en español y se tradujo para el proyecto (ver
+`ATTRIBUTION.md`). Si a una clave le falta traducción, se muestra el español.

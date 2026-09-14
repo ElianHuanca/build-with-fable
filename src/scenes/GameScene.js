@@ -20,8 +20,9 @@ import { Badges } from '../systems/Badges.js';
 import { saveSystem } from '../systems/SaveSystem.js';
 import { AudioManager } from '../systems/AudioManager.js';
 import { PALETTE } from '../data/palette.js';
-import { FACTS } from '../data/facts.js';
-import { TIPS } from '../data/tips.js';
+import { factsL } from '../data/facts.js';
+import { tipsL } from '../data/tips.js';
+import { t, tx } from '../i18n/index.js';
 import { speciesById } from '../data/species.js';
 import { esModoTactil } from '../data/ui.js';
 import { getLevel, LEVELS } from '../data/levels.js';
@@ -58,6 +59,19 @@ const PUNTOS_BROTE = { pequeno: 75, medio: 90, grande: 100 };
 const GARAJE_OFFSET = { x: 96, y: 56 };
 /** Velocidad mínima (px/s) para que suene el motor de la camioneta. */
 const MOTOR_MIN_SPEED = 5;
+
+/**
+ * Nombre visible de una zona del nivel en el idioma actual. En el JSON las zonas se llaman
+ * "Manzana N", "Plaza" o "Estación SEDES" (identificadores para misiones): se traducen al mostrar.
+ */
+export function nombreZona(name) {
+  if (!name) return '';
+  const m = /^Manzana\s+(\d+)$/i.exec(name);
+  if (m) return t('game.manzana', { n: m[1] });
+  if (name === 'Plaza') return t('game.plaza');
+  if (name === 'Estación SEDES') return t('game.estacion');
+  return name;
+}
 
 /**
  * Escena de juego: el barrio con criaderos detectables y eliminables, más la jornada v2
@@ -215,7 +229,7 @@ export class GameScene extends Phaser.Scene {
       this.time.delayedCall(700, () => {
         if (this.terminado) return;
         this.sumarPuntos(bonus);
-        this.alertToast.mostrar(`Bonus por estudiar: +${bonus}`, 3500);
+        this.alertToast.mostrar(t('game.toast.bonus', { n: bonus }), 3500);
       });
     }
   }
@@ -260,9 +274,17 @@ export class GameScene extends Phaser.Scene {
     // La Biblioteca puede avisar por game.events (contrato compartido con el menú).
     const onLibGlobal = () => this.cerrarBiblioteca();
     this.game.events.on('library:cerrar', onLibGlobal);
+    // Cambio de idioma en plena partida: republicar zona y misiones ya traducidas (el HUD escucha 'lang').
+    const onLang = () => {
+      if (!this.sys.settings.active) return;
+      this.registry.set('zona', nombreZona(this.currentZone?.name));
+      this.registry.set('misiones', this.missions.lista());
+    };
+    this.game.events.on('lang', onLang);
     this.events.once('shutdown', () => {
       offs.forEach((off) => off());
       this.game.events.off('library:cerrar', onLibGlobal);
+      this.game.events.off('lang', onLang);
       AudioManager.stopMusic();
       this.prompt?.destroy();
       this.touch?.destroy();
@@ -292,7 +314,7 @@ export class GameScene extends Phaser.Scene {
     const zone = zoneAt(this.zones, this.player.x, this.player.y);
     if (zone !== this.currentZone) {
       this.currentZone = zone;
-      this.registry.set('zona', zone ? zone.name : '');
+      this.registry.set('zona', zone ? nombreZona(zone.name) : '');
       if (zone) this.missions.onZona(zone.name);
     }
 
@@ -317,7 +339,7 @@ export class GameScene extends Phaser.Scene {
     if (epidemiaEntera !== this.registry.get('epidemia')) this.registry.set('epidemia', epidemiaEntera);
     if (this.epidemicMeter.valor >= UMBRAL_RIESGO && !this.superoUmbral) {
       this.superoUmbral = true;
-      this.alertToast.mostrar('¡El barrio está en riesgo! Fumiga los brotes y limpia los criaderos.', 4000);
+      this.alertToast.mostrar(t('game.toast.riesgo'), 4000);
     }
     if (this.epidemicMeter.valor >= 100) { this.finDeNivel('epidemia'); return; }
 
@@ -450,7 +472,7 @@ export class GameScene extends Phaser.Scene {
   async abrirCamara() {
     if (this.limpiando || this.terminado || this.pausa.abierta || this.overlayAbierto) return;
     if (!this.scene.get('Camera')) {
-      this.alertToast.mostrar('La cámara con IA llega pronto: apunta a un mosquito y lo identifica.', 3000);
+      this.alertToast.mostrar(t('game.toast.camaraPronto'), 3000);
       return;
     }
     const b = this.broteMasCercano();
@@ -475,12 +497,12 @@ export class GameScene extends Phaser.Scene {
 
   /** 'camera:especie' { id, confianza, nueva }: insignia "Fotógrafo" y aviso al volver al juego. */
   onEspecieIdentificada(d = {}) {
-    const nombre = d.id ? speciesById(d.id)?.nombre?.es : '';
-    const texto = `¡Especie identificada!${nombre ? ` ${nombre}` : ''}`;
+    const nombre = d.id ? tx(speciesById(d.id)?.nombre) : '';
+    const texto = `${t('game.toast.especie')}${nombre ? ` ${nombre}` : ''}`;
     let nuevaInsignia = false;
     try { nuevaInsignia = !!Badges.otorgar?.('fotografo'); } catch { /* insignias no disponibles */ }
     this.registry.set('mensaje', texto);
-    this.mensajePendiente = nuevaInsignia ? `${texto} · Insignia: Fotógrafo` : texto;
+    this.mensajePendiente = nuevaInsignia ? t('game.toast.insignia', { texto, insignia: t('lib.insignia.fotografo') }) : texto;
   }
 
   /**
@@ -492,7 +514,7 @@ export class GameScene extends Phaser.Scene {
     if (this.limpiando || this.terminado || this.pausa.abierta || this.overlayAbierto) return;
     if (!this.scene.get('Library')) {
       this.mostrarTip('estacion');
-      this.alertToast.mostrar('La Biblioteca SEDES llega pronto: fichas de mosquitos, síntomas y prevención.', 3000);
+      this.alertToast.mostrar(t('game.toast.bibliotecaPronto'), 3000);
       return;
     }
     this.pausaSuave('biblioteca');
@@ -625,7 +647,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Muestra un mensaje aleatorio de TIPS[categoria] en el HUD (sin romper si no hay HUD activo). */
   mostrarTip(categoria, ms) {
-    const lista = TIPS[categoria];
+    const lista = tipsL()[categoria];
     if (!Array.isArray(lista) || !lista.length) return;
     const texto = Phaser.Utils.Array.GetRandom(lista);
     this.scene.get('HUD')?.mostrarDato?.(texto, ms);
@@ -634,10 +656,10 @@ export class GameScene extends Phaser.Scene {
   /** Nuevo brote detectado por el OutbreakManager: aviso (y tip tutorial la primera vez). */
   onBroteNuevo(b) {
     const zona = zoneAt(this.zones, b.x, b.y);
-    const aviso = `¡Brote en ${zona ? zona.name : 'el barrio'}! Fumígalo antes de que crezca.`;
+    const aviso = t('game.toast.brote', { zona: zona ? nombreZona(zona.name) : t('game.elBarrio') });
     if (!this.brotesVistos) {
       this.brotesVistos = true;
-      const tutorial = TIPS.brote?.[0];
+      const tutorial = tipsL().brote?.[0];
       this.alertToast.mostrar(tutorial ? `${tutorial} ${aviso}` : aviso, 5000);
     } else {
       this.alertToast.mostrar(aviso);
@@ -696,8 +718,8 @@ export class GameScene extends Phaser.Scene {
       if (!this.sys.settings.active && !this.sys.isPaused()) return; // la escena se cerró durante la animación
       const r = this.score.addCriadero(this.time.now);
       this.limpios = this.criaderos.filter((k) => k.state === 'limpio').length;
-      this.textoFlotante(c.x, c.y - 24, `+${r.puntos}`, PALETTE.amarillo);
-      if (r.bonus) this.textoFlotante(c.x, c.y - 52, `+${r.bonus} combo`, PALETTE.teja);
+      this.textoFlotante(c.x, c.y - 24, t('game.mas', { n: r.puntos }), PALETTE.amarillo);
+      if (r.bonus) this.textoFlotante(c.x, c.y - 52, t('game.combo', { n: r.bonus }), PALETTE.teja);
 
       this.registry.set('puntos', r.total);
       this.registry.set('limpios', this.limpios);
@@ -705,7 +727,7 @@ export class GameScene extends Phaser.Scene {
       this.missions.onCriaderoLimpio(c);
       this.epidemicMeter.registrarLimpieza();
       this.scene.get('HUD')?.flashPuntos?.();
-      const fact = FACTS[c.type];
+      const fact = factsL()[c.type];
       if (fact) console.log(`[Dengue] ${fact.nombre}: ${fact.dato} (${fact.fuente})`);
 
       // Popup educativo: el juego se pausa hasta 'popup:cerrado'.
@@ -745,7 +767,7 @@ export class GameScene extends Phaser.Scene {
         if (completado) {
           const puntos = PUNTOS_BROTE[nivel] ?? PUNTOS_BROTE.pequeno;
           this.sumarPuntos(puntos);
-          this.textoFlotante(b.x, b.y - 24, `+${puntos}`, PALETTE.amarillo);
+          this.textoFlotante(b.x, b.y - 24, t('game.mas', { n: puntos }), PALETTE.amarillo);
           this.epidemicMeter.registrarFumigado(nivel);
           this.mostrarTip('fumigar');
         }

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { AudioManager } from '../systems/AudioManager.js';
 import { Layout } from '../systems/Layout.js';
+import { t } from '../i18n/index.js';
 
 const BASE = import.meta.env.BASE_URL + 'assets/';
 
@@ -29,7 +30,7 @@ export class BootScene extends Phaser.Scene {
   preload() {
     const box = this.add.rectangle(0, 0, 320, 24, hex(PALETTE.marino)).setStrokeStyle(2, hex(PALETTE.celeste));
     const bar = this.add.rectangle(0, 0, 0, 16, hex(PALETTE.verde)).setOrigin(0, 0.5);
-    const label = this.add.text(0, 0, 'Cargando el barrio...', { fontFamily: 'Arial, sans-serif', fontSize: 18, color: PALETTE.blanco }).setOrigin(0.5);
+    const label = this.add.text(0, 0, t('boot.cargando'), { fontFamily: 'Arial, sans-serif', fontSize: 18, color: PALETTE.blanco }).setOrigin(0.5);
     let progreso = 0;
     const reflow = (width, height) => {
       box.setPosition(width / 2, height / 2);

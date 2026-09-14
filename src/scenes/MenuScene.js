@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
 import { Layout } from '../systems/Layout.js';
-import { t } from '../i18n/index.js';
+import { t, getLang, setLang } from '../i18n/index.js';
 
 const FONT = 'Arial, sans-serif';
 const SONIDO_KEY = 'dengue.sonido';
@@ -45,6 +45,12 @@ export function escribirSonido(on) {
   cargarAudio().then((am) => { if (am && typeof am.setEnabled === 'function') am.setEnabled(on); });
 }
 
+/** Reduce la fuente de `txt` hasta que quepa en `maxW` (los textos en inglés pueden ser más largos). */
+export function fitText(txt, maxW, fontSize, min = 11) {
+  if (txt.width <= maxW) return;
+  txt.setFontSize(Math.max(min, Math.floor(fontSize * maxW / txt.width)));
+}
+
 /**
  * Botón redondeado con Graphics + Text (+ ícono opcional). Devuelve un Container interactivo.
  * @param {Phaser.Scene} scene
@@ -76,10 +82,13 @@ export function makeButton(scene, o) {
     const s = Math.min((h - 14) / img.height, 1);
     img.setScale(s);
     const gap = 8;
+    fitText(txt, w - 24 - img.displayWidth - gap, fontSize);
     const total = img.displayWidth + gap + txt.width;
     img.setPosition(-total / 2 + img.displayWidth / 2, 0);
     txt.setPosition(-total / 2 + img.displayWidth + gap + txt.width / 2, 0);
     c.add(img);
+  } else {
+    fitText(txt, w - 24, fontSize);
   }
 
   c.setSize(...touchSize(w, h)); // área táctil ≥ MIN_TOUCH aunque el dibujo sea menor
@@ -106,8 +115,9 @@ export function makeButton(scene, o) {
  * @param {{title:string, w?:number, h?:number, build:(c:Phaser.GameObjects.Container, close:()=>void)=>void}} o
  */
 export function openModal(scene, o) {
-  const { title, w = 520, h = 320, build } = o;
+  const { title, h = 320, build } = o;
   const W = scene.scale.width, H = scene.scale.height;
+  const w = Math.min(o.w ?? 520, W - 2 * Layout.MARGIN);
   const root = scene.add.container(0, 0).setDepth(5000);
   const dim = scene.add.rectangle(W / 2, H / 2, W, H, hex(PALETTE.linea), 0.6).setInteractive();
   dim.on('pointerdown', (p, lx, ly, ev) => ev?.stopPropagation?.());
@@ -120,6 +130,7 @@ export function openModal(scene, o) {
   const t = scene.add.text(0, -h / 2 + 27, title, {
     fontFamily: FONT, fontSize: 24, fontStyle: 'bold', color: PALETTE.blanco,
   }).setOrigin(0.5);
+  fitText(t, w - 40, 24);
   panel.add([g, t]);
   root.add([dim, panel]);
 
@@ -144,6 +155,10 @@ export class MenuScene extends Phaser.Scene {
 
   create() {
     Layout.onResize(this, (w, h) => this.layout(w, h));
+    // Cambio de idioma (setLang → game.events 'lang'): redibuja el menú.
+    const onLang = () => this.layout(this.scale.width, this.scale.height);
+    this.game.events.on('lang', onLang);
+    this.events.once('shutdown', () => this.game.events.off('lang', onLang));
     // Atajo de teclado
     this.input.keyboard?.once('keydown-ENTER', () => { sfx(this, 'click'); this.scene.start('LevelSelect'); });
   }
@@ -163,7 +178,7 @@ export class MenuScene extends Phaser.Scene {
     // JUGAR
     const jugarY = portrait ? H * 0.5 : H * 0.56;
     root.add(makeButton(this, {
-      x: W / 2, y: jugarY, w: Math.min(W - safe.left - safe.right, 280), h: 64 * ui, label: 'JUGAR', fontSize: 28 * ui,
+      x: W / 2, y: jugarY, w: Math.min(W - safe.left - safe.right, 280), h: 64 * ui, label: t('menu.jugar'), fontSize: 28 * ui,
       color: PALETTE.verde, colorHover: PALETTE.verdeOscuro, radius: 18,
       onClick: () => this.scene.start('LevelSelect'),
     }));
@@ -173,12 +188,12 @@ export class MenuScene extends Phaser.Scene {
     if (portrait) {
       const w = Math.min(W - safe.left - safe.right, 260);
       root.add(makeButton(this, {
-        x: W / 2, y: smallY, w, h: 46, label: 'CRÉDITOS', fontSize: 16,
+        x: W / 2, y: smallY, w, h: 46, label: t('menu.creditos'), fontSize: 16,
         color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_book',
         onClick: () => this.abrirCreditos(),
       }));
       root.add(makeButton(this, {
-        x: W / 2, y: smallY + 56, w, h: 46, label: 'CONFIGURACIÓN', fontSize: 16,
+        x: W / 2, y: smallY + 56, w, h: 46, label: t('menu.configuracion'), fontSize: 16,
         color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_gear',
         onClick: () => this.abrirConfiguracion(),
       }));
@@ -190,7 +205,7 @@ export class MenuScene extends Phaser.Scene {
     } else {
       const bw = Math.min(200, (W - 40 - 24) / 3);
       root.add(makeButton(this, {
-        x: W / 2 - bw - 12, y: smallY, w: bw, h: 48, label: 'CRÉDITOS', fontSize: 16,
+        x: W / 2 - bw - 12, y: smallY, w: bw, h: 48, label: t('menu.creditos'), fontSize: 16,
         color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_book',
         onClick: () => this.abrirCreditos(),
       }));
@@ -200,17 +215,33 @@ export class MenuScene extends Phaser.Scene {
         onClick: () => this.abrirBiblioteca(),
       }));
       root.add(makeButton(this, {
-        x: W / 2 + bw + 12, y: smallY, w: bw, h: 48, label: 'CONFIGURACIÓN', fontSize: 16,
+        x: W / 2 + bw + 12, y: smallY, w: bw, h: 48, label: t('menu.configuracion'), fontSize: 16,
         color: PALETTE.marino, colorHover: PALETTE.azulGorraOscuro, icon: 'icon_gear',
         onClick: () => this.abrirConfiguracion(),
       }));
     }
 
     // Subtítulo
-    root.add(this.add.text(W / 2, H - safe.bottom - 18, '¡Juntos contra el dengue!', {
+    root.add(this.add.text(W / 2, H - safe.bottom - 18, t('menu.lema'), {
       fontFamily: FONT, fontSize: 24 * ui, fontStyle: 'bold', color: PALETTE.blanco,
       stroke: PALETTE.marino, strokeThickness: 5,
     }).setOrigin(0.5));
+
+    // Botón pequeño de idioma (ES/EN) en la esquina superior derecha.
+    root.add(this.crearBotonIdioma(W - safe.right - 34, safe.top + 24));
+  }
+
+  /** Botón compacto que alterna es ↔ en (ícono 'icon_lang' si existe + etiqueta ES/EN). */
+  crearBotonIdioma(x, y) {
+    const otro = getLang() === 'en' ? 'es' : 'en';
+    const btn = makeButton(this, {
+      x, y, w: 68, h: 36, label: t('menu.idiomaBtn'), fontSize: 15, radius: 10,
+      color: PALETTE.azulGorra, colorHover: PALETTE.azulGorraOscuro,
+      icon: this.textures.exists('icon_lang') ? 'icon_lang' : null,
+      onClick: () => setLang(otro),
+    });
+    btn.setName('btn_lang');
+    return btn;
   }
 
   drawBackground(W, H) {
@@ -280,24 +311,21 @@ export class MenuScene extends Phaser.Scene {
   }
 
   abrirCreditos() {
-    const lineas = [
-      'Dengue Invaders 2D — prototipo educativo',
-      'Datos: SEDES Santa Cruz',
-      'Gráficos y sonidos generados para este proyecto',
-      'Motor: Phaser 3',
-      'Hecho con Claude Code',
-    ];
+    const lineas = [1, 2, 3, 4, 5].map((i) => t(`menu.creditos.l${i}`));
+    const w = Math.min(560, this.scale.width - 2 * Layout.MARGIN);
     openModal(this, {
-      title: 'Créditos', w: 560, h: 340,
+      title: t('menu.creditos.titulo'), w, h: 340,
       build: (panel, close) => {
         lineas.forEach((l, i) => {
-          panel.add(this.add.text(0, -95 + i * 34, l, {
+          const txt = this.add.text(0, -95 + i * 34, l, {
             fontFamily: FONT, fontSize: i === 0 ? 20 : 18, fontStyle: i === 0 ? 'bold' : 'normal',
-            color: i === 0 ? PALETTE.azulGorra : PALETTE.marino,
-          }).setOrigin(0.5));
+            color: i === 0 ? PALETTE.azulGorra : PALETTE.marino, align: 'center',
+          }).setOrigin(0.5);
+          fitText(txt, w - 40, i === 0 ? 20 : 18);
+          panel.add(txt);
         });
         panel.add(makeButton(this, {
-          x: 0, y: 340 / 2 - 44, w: 180, h: 46, label: 'Cerrar', fontSize: 18,
+          x: 0, y: 340 / 2 - 44, w: 180, h: 46, label: t('menu.cerrar'), fontSize: 18,
           color: PALETTE.azulGorra, colorHover: PALETTE.azulGorraOscuro, onClick: close,
         }));
       },
@@ -305,47 +333,78 @@ export class MenuScene extends Phaser.Scene {
   }
 
   abrirConfiguracion() {
-    openModal(this, {
-      title: 'Configuración', w: 520, h: 320,
+    const w = Math.min(520, this.scale.width - 2 * Layout.MARGIN);
+    const lx = -w / 2 + 24;          // columna de etiquetas
+    const compacto = w < 440;        // en pantallas angostas los controles van bajo la etiqueta
+    const H_MODAL = compacto ? 470 : 400;
+    const bw = compacto ? Math.min(150, (w - 60) / 2) : 160;
+    const rx = compacto ? 0 : w / 2 - 24 - bw / 2; // columna de controles
+    const modal = openModal(this, {
+      title: t('cfg.titulo'), w, h: H_MODAL,
       build: (panel, close) => {
-        let on = leerSonido();
-        panel.add(this.add.text(-190, -50, 'Sonido', {
+        const filas = compacto ? [-158, -66, 32] : [-125, -40, 45];
+        const etiqueta = (y, key) => this.add.text(lx, y, t(key), {
           fontFamily: FONT, fontSize: 22, fontStyle: 'bold', color: PALETTE.marino,
-        }).setOrigin(0, 0.5));
+        }).setOrigin(0, 0.5);
+        const cy = (y) => (compacto ? y + 40 : y);
+
+        // Sonido
+        let on = leerSonido();
+        panel.add(etiqueta(filas[0], 'cfg.sonido'));
         const btnSonido = makeButton(this, {
-          x: 130, y: -50, w: 160, h: 46, label: on ? 'ON' : 'OFF', fontSize: 20,
+          x: rx, y: cy(filas[0]), w: bw, h: 42, label: t(on ? 'cfg.on' : 'cfg.off'), fontSize: 20,
           color: on ? PALETTE.verde : PALETTE.grisClaro,
           colorHover: on ? PALETTE.verdeOscuro : PALETTE.gris,
           onClick: () => {
             on = !on;
             escribirSonido(on);
-            btnSonido.label.setText(on ? 'ON' : 'OFF');
+            btnSonido.label.setText(t(on ? 'cfg.on' : 'cfg.off'));
             btnSonido.redraw(on ? PALETTE.verde : PALETTE.grisClaro);
           },
         });
         panel.add(btnSonido);
 
-        panel.add(this.add.text(-190, 20, 'Progreso', {
-          fontFamily: FONT, fontSize: 22, fontStyle: 'bold', color: PALETTE.marino,
-        }).setOrigin(0, 0.5));
-        const info = this.add.text(-190, 48, 'Estrellas y mejores tiempos guardados', {
-          fontFamily: FONT, fontSize: 14, color: PALETTE.grisClaro,
+        // Idioma: [Español] [English]
+        panel.add(etiqueta(filas[1], 'cfg.idioma'));
+        const lw = compacto ? bw : 118;
+        const opciones = [['es', 'Español'], ['en', 'English']];
+        opciones.forEach(([code, nombre], i) => {
+          const activo = getLang() === code;
+          const bx = compacto ? (i === 0 ? -lw / 2 - 5 : lw / 2 + 5) : (w / 2 - 24 - lw / 2 - (1 - i) * (lw + 8));
+          panel.add(makeButton(this, {
+            x: bx, y: cy(filas[1]), w: lw, h: 42, label: nombre, fontSize: 17,
+            color: activo ? PALETTE.verde : PALETTE.grisClaro,
+            colorHover: activo ? PALETTE.verdeOscuro : PALETTE.gris,
+            onClick: () => {
+              if (getLang() === code) return;
+              // setLang emite 'lang' → el menú se redibuja; reabrimos el modal traducido.
+              modal.close();
+              setLang(code);
+              this.time.delayedCall(140, () => this.abrirConfiguracion());
+            },
+          }));
+        });
+
+        // Progreso
+        panel.add(etiqueta(filas[2], 'cfg.progreso'));
+        const info = this.add.text(lx, filas[2] + 26, t('cfg.progresoInfo'), {
+          fontFamily: FONT, fontSize: 14, color: PALETTE.grisClaro, wordWrap: { width: compacto ? w - 48 : w - 48 - bw - 16 },
         }).setOrigin(0, 0.5);
         panel.add(info);
         const btnBorrar = makeButton(this, {
-          x: 130, y: 20, w: 160, h: 46, label: 'Borrar', fontSize: 18,
+          x: rx, y: cy(filas[2]) + (compacto ? 22 : 0), w: bw, h: 42, label: t('cfg.borrar'), fontSize: 18,
           color: PALETTE.teja, colorHover: PALETTE.tejaOscura,
           onClick: () => {
             try { localStorage.removeItem(PROGRESO_KEY); } catch { /* sin storage */ }
             import('../systems/SaveSystem.js').then((m) => m.saveSystem?.reset?.()).catch(() => {});
-            info.setText('Progreso borrado').setColor(PALETTE.tejaOscura);
-            btnBorrar.label.setText('Listo');
+            info.setText(t('cfg.progresoBorrado')).setColor(PALETTE.tejaOscura);
+            btnBorrar.label.setText(t('cfg.listo'));
           },
         });
         panel.add(btnBorrar);
 
         panel.add(makeButton(this, {
-          x: 0, y: 320 / 2 - 44, w: 180, h: 46, label: 'Cerrar', fontSize: 18,
+          x: 0, y: H_MODAL / 2 - 40, w: 180, h: 46, label: t('cfg.cerrar'), fontSize: 18,
           color: PALETTE.azulGorra, colorHover: PALETTE.azulGorraOscuro, onClick: close,
         }));
       },

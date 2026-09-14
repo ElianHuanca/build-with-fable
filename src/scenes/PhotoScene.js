@@ -2,11 +2,12 @@ import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
 import { Layout } from '../systems/Layout.js';
+import { t } from '../i18n/index.js';
 
 const FONT = 'Arial, sans-serif';
 const ROJO = '#e74c3c';
 const FRAME = 256;
-const SHARE_TEXT = '¡Eliminé criaderos de dengue en mi barrio! Juega Dengue Invaders y protege tu comunidad. #SinCriaderosNoHayDengue';
+const FILE_NAME = 'dengue-antes-despues.png';
 
 /**
  * Modo foto: antes/después del último criadero.
@@ -38,7 +39,7 @@ export class PhotoScene extends Phaser.Scene {
     const cx = W / 2;
 
     root.add(this.add.rectangle(cx, H / 2, W, H, hex(PALETTE.marino), 0.96).setInteractive());
-    root.add(this.add.text(cx, 40, 'Modo foto', {
+    root.add(this.add.text(cx, 40, t('photo.titulo'), {
       fontFamily: FONT, fontSize: 34, fontStyle: 'bold', color: PALETTE.blanco,
       stroke: PALETTE.linea, strokeThickness: 5,
     }).setOrigin(0.5));
@@ -63,8 +64,8 @@ export class PhotoScene extends Phaser.Scene {
       fyAntes = topY + frame / 2;
       fyDespues = fyAntes;
     }
-    root.add(this.addFrame(portrait ? cx : cx - gap, fyAntes, this.antesKey, 'Antes', ROJO, frame));
-    root.add(this.addFrame(portrait ? cx : cx + gap, fyDespues, this.despuesKey, 'Después', PALETTE.verde, frame));
+    root.add(this.addFrame(portrait ? cx : cx - gap, fyAntes, this.antesKey, t('photo.antes'), ROJO, frame));
+    root.add(this.addFrame(portrait ? cx : cx + gap, fyDespues, this.despuesKey, t('photo.despues'), PALETTE.verde, frame));
     const frameBottom = Math.max(fyAntes, fyDespues) + frame / 2;
 
     if (this.textures.exists('spark')) {
@@ -99,11 +100,13 @@ export class PhotoScene extends Phaser.Scene {
 
     this.status = this.add.text(cx, H - 110, '', {
       fontFamily: FONT, fontSize: 15, fontStyle: 'bold', color: PALETTE.amarillo,
+      align: 'center', wordWrap: { width: W - 32 },
     }).setOrigin(0.5);
     root.add(this.status);
 
-    root.add(this.makeButton(cx - 150, H - 50, 190, 52, 'Volver', PALETTE.grisClaro, PALETTE.gris, () => this.close()));
-    root.add(this.makeButton(cx + 150, H - 50, 190, 52, 'Compartir', PALETTE.azulGorra, PALETTE.azulGorraOscuro, () => this.share()));
+    const bw = Math.min(190, (W - 3 * Layout.MARGIN) / 2), bdx = bw / 2 + Layout.MARGIN / 2;
+    root.add(this.makeButton(cx - bdx, H - 50, bw, 52, t('photo.volver'), PALETTE.grisClaro, PALETTE.gris, () => this.close()));
+    root.add(this.makeButton(cx + bdx, H - 50, bw, 52, t('photo.compartir'), PALETTE.azulGorra, PALETTE.azulGorraOscuro, () => this.share()));
   }
 
   addFrame(x, y, key, label, color, frame = FRAME) {
@@ -116,7 +119,7 @@ export class PhotoScene extends Phaser.Scene {
       c.add(this.add.image(x, y, key).setDisplaySize(frame, frame));
     } else {
       g.fillStyle(hex(PALETTE.gris), 1).fillRect(x - frame / 2, y - frame / 2, frame, frame);
-      c.add(this.add.text(x, y, 'Sin captura', {
+      c.add(this.add.text(x, y, t('photo.sinCaptura'), {
         fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.grisClaro,
       }).setOrigin(0.5));
     }
@@ -142,10 +145,11 @@ export class PhotoScene extends Phaser.Scene {
       g.lineStyle(2, hex(PALETTE.blanco), 0.6).strokeRoundedRect(-w / 2, -h / 2, w, h, 12);
     };
     draw(color);
-    const t = this.add.text(0, 0, label, {
+    const txt = this.add.text(0, 0, label, {
       fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5);
-    c.add([g, t]).setSize(...touchSize(w, h)).setInteractive({ useHandCursor: true })
+    if (txt.width > w - 24) txt.setFontSize(Math.max(12, Math.floor(20 * (w - 24) / txt.width))); // etiquetas largas (EN)
+    c.add([g, txt]).setSize(...touchSize(w, h)).setInteractive({ useHandCursor: true })
       .on('pointerover', () => draw(hover))
       .on('pointerout', () => draw(color))
       .on('pointerdown', cb);
@@ -170,8 +174,8 @@ export class PhotoScene extends Phaser.Scene {
       const t = this.add.text(0, 0, label, { fontFamily: FONT, fontSize: 26, fontStyle: 'bold', color }).setVisible(false);
       rt.draw(t, x, M / 2 + 4); temps.push(t);
     };
-    drawSide(this.antesKey, 'Antes', ROJO, M);
-    drawSide(this.despuesKey, 'Después', PALETTE.verde, M * 2 + FRAME);
+    drawSide(this.antesKey, t('photo.antes'), ROJO, M);
+    drawSide(this.despuesKey, t('photo.despues'), PALETTE.verde, M * 2 + FRAME);
     rt.snapshot((img) => {
       temps.forEach((o) => o.destroy());
       rt.destroy();
@@ -189,11 +193,11 @@ export class PhotoScene extends Phaser.Scene {
       try {
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'dengue-antes-despues.png';
+        a.download = FILE_NAME;
         document.body.appendChild(a);
         a.click();
         a.remove();
-        this.setStatus('Imagen descargada: dengue-antes-despues.png');
+        this.setStatus(t('photo.descargada', { f: FILE_NAME }));
       } catch (e) {
         this.showBig(url);
         return;
@@ -212,10 +216,11 @@ export class PhotoScene extends Phaser.Scene {
       const im = this.add.image(W / 2, H / 2 - 30, key);
       const s = Math.min((W - 60) / im.width, (H - 130) / im.height, 1.5);
       im.setScale(s);
-      const t = this.add.text(W / 2, H - 40, 'Mantén presionado para guardar  ·  toca fuera para cerrar', {
+      const hint = this.add.text(W / 2, H - 40, t('photo.guardarHint'), {
         fontFamily: FONT, fontSize: 18, fontStyle: 'bold', color: PALETTE.amarillo,
+        align: 'center', wordWrap: { width: W - 32 },
       }).setOrigin(0.5);
-      overlay.add([dim, im, t]);
+      overlay.add([dim, im, hint]);
       dim.on('pointerdown', () => { overlay.destroy(); this.textures.remove(key); });
       // Imagen DOM sobre el canvas para permitir "guardar imagen" nativo en móvil.
       try {
@@ -223,7 +228,7 @@ export class PhotoScene extends Phaser.Scene {
         const rect = canvas.getBoundingClientRect();
         const el = document.createElement('img');
         el.src = url;
-        el.alt = 'Antes y después';
+        el.alt = t('photo.alt');
         const sx = rect.width / W, sy = rect.height / H;
         Object.assign(el.style, {
           position: 'fixed', zIndex: 1000, pointerEvents: 'auto',
@@ -248,12 +253,13 @@ export class PhotoScene extends Phaser.Scene {
     if (this.busy) return;
     this.busy = true;
     this.sfx('click');
+    const shareText = t('photo.shareText');
     const fallbackCopy = async () => {
       try {
-        await navigator.clipboard.writeText(SHARE_TEXT);
-        this.setStatus('¡Copiado!');
+        await navigator.clipboard.writeText(shareText);
+        this.setStatus(t('photo.copiado'));
       } catch (_) {
-        this.setStatus('No se pudo compartir en este dispositivo.');
+        this.setStatus(t('photo.noCompartir'));
       }
     };
     if (!navigator.share) { this.busy = false; return fallbackCopy(); }
@@ -261,11 +267,11 @@ export class PhotoScene extends Phaser.Scene {
       this.busy = false;
       try {
         const blob = await (await fetch(img.src)).blob();
-        const file = new File([blob], 'dengue-antes-despues.png', { type: 'image/png' });
-        const data = { title: 'Dengue Invaders', text: SHARE_TEXT, files: [file] };
+        const file = new File([blob], FILE_NAME, { type: 'image/png' });
+        const data = { title: 'Dengue Invaders', text: shareText, files: [file] };
         if (navigator.canShare && navigator.canShare(data)) await navigator.share(data);
-        else await navigator.share({ title: 'Dengue Invaders', text: SHARE_TEXT });
-        this.setStatus('¡Compartido!');
+        else await navigator.share({ title: 'Dengue Invaders', text: shareText });
+        this.setStatus(t('photo.compartido'));
       } catch (e) {
         if (e?.name !== 'AbortError') await fallbackCopy();
       }

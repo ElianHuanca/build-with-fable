@@ -14,7 +14,15 @@
 import { es } from './es.js';
 import { en } from './en.js';
 
-const DICTS = { es, en };
+// Diccionarios parciales: cada módulo de ./dict/*.js exporta `es` y `en` (objetos planos).
+// Se fusionan automáticamente (Vite import.meta.glob), así varios equipos agregan claves
+// sin tocar es.js / en.js.
+const PARTES = import.meta.glob('./dict/*.js', { eager: true });
+const DICTS = { es: { ...es }, en: { ...en } };
+for (const mod of Object.values(PARTES)) {
+  Object.assign(DICTS.es, mod.es || {});
+  Object.assign(DICTS.en, mod.en || {});
+}
 const KEY = 'dengue.lang';
 let lang = detectar();
 let game = null;

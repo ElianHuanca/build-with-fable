@@ -10,6 +10,7 @@ import { PhotoScene } from './scenes/PhotoScene.js';
 import { LibraryScene } from './scenes/LibraryScene.js';
 import { CameraScene } from './scenes/CameraScene.js';
 import { PALETTE } from './data/palette.js';
+import { bindGame } from './i18n/index.js';
 
 export const GAME_W = 960;
 export const GAME_H = 540;
@@ -35,6 +36,9 @@ const game = new Phaser.Game({
   // Orden: Boot arranca; Menu → LevelSelect → Game (+HUD, Popup, LevelEnd y Photo en paralelo).
   scene: [BootScene, MenuScene, LevelSelectScene, GameScene, HUDScene, PopupScene, LevelEndScene, PhotoScene, CameraScene, LibraryScene],
 });
+
+// i18n: emite game.events 'lang' al cambiar de idioma (setLang).
+bindGame(game);
 
 // Acceso para pruebas automatizadas y depuración en consola.
 window.__game = game;

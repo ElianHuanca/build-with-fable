@@ -2,8 +2,9 @@
 
 ## Gráficos
 
-Todos los sprites, tiles, elementos de interfaz, logo, fondo de menú, retratos y miniaturas
-se generan proceduralmente en este repositorio con `tools/gen-assets.mjs` (SVG dibujado en
+Todos los sprites, tiles, elementos de interfaz, logo, fondo de menú, retratos, miniaturas y
+(v3) las ilustraciones de las 4 especies de mosquito, el rociador, la niebla, los íconos del
+ciclo de vida, las insignias y las pestañas de la Biblioteca se generan proceduralmente en este repositorio con `tools/gen-assets.mjs` (SVG dibujado en
 código, exportado a PNG con `sharp`) usando la paleta de `src/data/palette.js`. No se usan
 imágenes de terceros. La guía de estilo está en `docs/ASSET_PROMPTS.md`.
 
@@ -12,8 +13,8 @@ licencia.
 
 ## Sonidos y música
 
-Los 7 efectos (`step`, `detect`, `gluglu`, `pop`, `points`, `win`, `click`) y la pista
-`music.wav` se sintetizan en este repositorio con `tools/gen-sfx.mjs` (osciladores y ruido
+Los 11 efectos (`step`, `detect`, `gluglu`, `pop`, `points`, `win`, `click`, `alert`, `spray`,
+`motor`, `buzz`) y la pista `music.wav` se sintetizan en este repositorio con `tools/gen-sfx.mjs` (osciladores y ruido
 en JavaScript puro, estilo retro inspirado en jsfxr). No se usan muestras de terceros.
 
 ## Datos educativos
@@ -26,6 +27,31 @@ de criadero) se redactaron a partir de material de divulgación del **SEDES Sant
 público (escuelas, campañas, publicación) deben verificarse y, si corresponde, corregirse
 contra las publicaciones oficiales vigentes del SEDES o del Ministerio de Salud y Deportes
 de Bolivia.
+
+### Especies y Biblioteca SEDES (v3)
+
+El contenido de `src/data/species.js` (fichas de *Aedes aegypti*, *Aedes albopictus*, *Culex
+quinquefasciatus* y *Anopheles darlingi*: cómo reconocerlos, qué transmiten, dónde crían, horario
+de picadura, "señales" que muestra la cámara IA) y de `src/data/library.js` (ciclo de vida y
+duración de cada etapa, síntomas y señales de alarma, prevención, mitos y verdades) fue
+**redactado para este proyecto** en español, con su traducción al inglés, como divulgación
+general para estudiantes de 10 a 14 años. Se basa en conocimiento de dominio público sobre
+vectores del dengue tal como lo difunden el SEDES Santa Cruz y la OPS/OMS; **no reproduce texto
+de ninguna publicación** ni cita cifras oficiales textuales.
+
+Los porcentajes de confianza, las "señales detectadas" y la frecuencia con que aparece cada
+especie en la **cámara con IA** son valores de una **simulación** (ver `docs/GDD.md` §12): no
+son resultados de un modelo de reconocimiento ni datos epidemiológicos, y no deben presentarse
+como tales.
+
+**Antes de uso público**, este contenido debe revisarse con el SEDES Santa Cruz y/o contra las
+guías vigentes de la OPS/OMS (dengue, chikungunya, zika, malaria) y del Ministerio de Salud y
+Deportes de Bolivia, en especial: duración de las etapas del ciclo de vida, especies presentes
+en la región, señales de alarma del dengue y recomendaciones de manejo (no automedicarse,
+acudir al centro de salud). Al hacerlo, añade aquí la fuente y la fecha de revisión.
+
+Las traducciones al inglés (`src/i18n/en.js`, `src/i18n/dict/*.js` y los campos `en` de los
+datos) también se redactaron para el proyecto y deben revisarse con la misma pauta.
 
 ## Barrio
 

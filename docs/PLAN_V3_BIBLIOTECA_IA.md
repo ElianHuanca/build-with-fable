@@ -87,6 +87,22 @@ registra en `docs/PROGRESO.md`.
 - Build, prueba final, commit único por ola en local y **push solo al terminar**.
 - Publicar el enlace de demo actualizado.
 
+### Estado (2026-09-14)
+- **Ola 1 — Hecha** (commit `9ab1d93`): A Biblioteca, B Cámara IA (demo), C Enjambres y
+  fumigación, D Visibilidad y enganches, E Assets v3. Detalle por agente y archivos en
+  `docs/PROGRESO.md` ("v3 — Biblioteca, cámara IA, visibilidad, inglés").
+- **Ola 2 — En curso**: F1 (i18n menús/flujo, `src/i18n/dict/menus.js`) y F2 (i18n juego/HUD) y
+  G (i18n datos: tips, facts, quiz) en curso; H (QA ES/EN vertical y escritorio) pendiente;
+  I (documentación: `PROGRESO.md`, `GDD.md` §11–15, `ARQUITECTURA.md` §2.7, `README.md`,
+  `ATTRIBUTION.md`) hecha.
+- **Cierre — Pendiente**: QA final, video demo v3 y push (solo cuando termine todo, por pedido
+  del usuario).
+- Desvíos respecto a este plan: fumigar con `E`/ACCIÓN es "mantener presionado" (soltar cancela,
+  los mosquitos caídos no vuelven); el clic del botón del cartel corre solo. Los paneles del HUD se
+  atenúan pero no se reubican; el plegado de misiones aplica solo en vertical. El álbum vive en
+  `localStorage 'dengue.album'` y se muestra desde la cámara; la Biblioteca aún no tiene una
+  pestaña "Álbum" propia.
+
 ---
 
 ## 3. Contratos comunes

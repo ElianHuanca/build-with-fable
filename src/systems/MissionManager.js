@@ -7,8 +7,10 @@
  *
  * Se activan en orden, pero los eventos cuentan aunque la misión aún no esté
  * activa: si el jugador se adelanta, la misión se completa al activarse.
- * No depende de Phaser.
+ * No depende de Phaser (solo de i18n: `lista()` devuelve `texto` ya traducido con t()).
  */
+import { t } from '../i18n/index.js';
+
 export const ZONAS_OBJETIVO = 3;
 export const CRIADEROS_OBJETIVO = 3;
 
@@ -29,10 +31,10 @@ export class MissionManager {
     this.criaderosLimpios = 0;
     this.familiaLimpia = false;
     this.misiones = [
-      { id: 'recorrer', texto: 'Recorre el barrio', hecho: false },
-      { id: 'encontrar', texto: 'Encuentra 3 criaderos', hecho: false },
-      { id: 'familia', texto: 'Ayuda a la familia', hecho: false },
-      { id: 'proteger', texto: 'Barrio protegido 100%', hecho: false },
+      { id: 'recorrer', hecho: false },
+      { id: 'encontrar', hecho: false },
+      { id: 'familia', hecho: false },
+      { id: 'proteger', hecho: false },
     ];
     this.emit();
   }
@@ -104,11 +106,22 @@ export class MissionManager {
     return cambio;
   }
 
-  /** @returns {{id:string, texto:string, hecho:boolean, progreso:string, activa:boolean}[]} */
+  /** Texto de una misión en el idioma actual (claves 'mision.*'). */
+  static textoDe(id) {
+    switch (id) {
+      case 'recorrer': return t('mision.recorrer');
+      case 'encontrar': return t('mision.encontrar', { n: CRIADEROS_OBJETIVO });
+      case 'familia': return t('mision.familia');
+      case 'proteger': return t('mision.proteger');
+      default: return id;
+    }
+  }
+
+  /** @returns {{id:string, texto:string, hecho:boolean, progreso:string, activa:boolean}[]} (texto ya traducido) */
   lista() {
     const ai = this.activaIndex;
     return this.misiones.map((m, i) => ({
-      id: m.id, texto: m.texto, hecho: m.hecho, progreso: this.progresoDe(m.id), activa: i === ai,
+      id: m.id, texto: MissionManager.textoDe(m.id), hecho: m.hecho, progreso: this.progresoDe(m.id), activa: i === ai,
     }));
   }
 }

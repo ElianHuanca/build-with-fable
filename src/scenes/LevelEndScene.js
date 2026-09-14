@@ -2,30 +2,21 @@ import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
 import { Layout } from '../systems/Layout.js';
-import { FACTS } from '../data/facts.js';
-import { QUIZ } from '../data/quiz.js';
+import * as Facts from '../data/facts.js';
+import * as Quiz from '../data/quiz.js';
+import * as Levels from '../data/levels.js';
+import * as Tips from '../data/tips.js';
+import { t, tx, getLang } from '../i18n/index.js';
 
 const FONT = 'Arial, sans-serif';
 /** Ancho de referencia de la maqueta; todo se arma a esta escala y luego se achica para caber. */
 const REF_W = 560;
-const MENSAJES = {
-  3: '¡Excelente! Un barrio limpio es un barrio más sano.',
-  2: '¡Muy bien! Cada criadero menos cuenta.',
-  1: '¡Lo lograste! La próxima vez, más rápido.',
-  0: '¡Lo lograste! La próxima vez, más rápido.',
-};
 
-/** Título, colores de cinta y mensaje del bocadillo según cómo terminó la jornada. */
+/** Colores de cinta según cómo terminó la jornada; título y mensaje salen del diccionario ('end.*'). */
 const RESULTADOS = {
-  completo: { titulo: '¡Barrio protegido!', cinta: PALETTE.azulGorra, cintaOscura: PALETTE.azulGorraOscuro, mensaje: null },
-  tiempo: {
-    titulo: 'Se acabó el tiempo', cinta: PALETTE.amarillo, cintaOscura: PALETTE.teja,
-    mensaje: 'El reloj llegó a cero antes de terminar la jornada. ¡Vuelve a intentarlo, cada recorrido cuenta!',
-  },
-  epidemia: {
-    titulo: 'Se declaró una epidemia', cinta: PALETTE.teja, cintaOscura: PALETTE.tejaOscura,
-    mensaje: 'El riesgo llegó al 100 %. Faltó fumigar los brotes a tiempo y limpiar más criaderos: cada minuto cuenta.',
-  },
+  completo: { cinta: PALETTE.azulGorra, cintaOscura: PALETTE.azulGorraOscuro, conMensaje: false },
+  tiempo: { cinta: PALETTE.amarillo, cintaOscura: PALETTE.teja, conMensaje: true },
+  epidemia: { cinta: PALETTE.teja, cintaOscura: PALETTE.tejaOscura, conMensaje: true },
 };
 
 const fmtTiempo = (s) => {
@@ -33,10 +24,42 @@ const fmtTiempo = (s) => {
   return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
 };
 
-/** 3 datos (.dato) de tipos de criadero distintos elegidos al azar, para "Aprendiste hoy". */
+/**
+ * Índices (estables ante cambios de idioma) de 3 frases para "Lo que aprendiste hoy":
+ * de aprendidoL() (tips.js) si existe; si no, de los datos (.dato) de facts.js.
+ */
 function elegirHechos(n = 3) {
-  const tipos = Phaser.Utils.Array.Shuffle(Object.keys(FACTS));
-  return tipos.slice(0, n).map((t) => FACTS[t].dato);
+  const usaTips = typeof Tips.aprendidoL === 'function' && Tips.aprendidoL()?.length;
+  const claves = usaTips ? Tips.aprendidoL().map((_, i) => i) : Object.keys(Facts.FACTS);
+  return { usaTips, claves: Phaser.Utils.Array.Shuffle(claves.slice()).slice(0, n) };
+}
+
+/** Frase de "aprendiste" en el idioma actual (clave = índice de aprendidoL() o tipo de criadero). */
+function fraseDe(hechos, clave) {
+  if (hechos.usaTips) return Tips.aprendidoL()[clave] ?? '';
+  return datoDe(clave);
+}
+
+/** Dato (.dato) del tipo en el idioma actual: factsL() si existe; si no, FACTS (con tx por si es {es,en}). */
+function datoDe(tipo) {
+  const facts = (typeof Facts.factsL === 'function' ? Facts.factsL() : null) || Facts.FACTS;
+  return tx(facts[tipo]?.dato ?? Facts.FACTS[tipo]?.dato ?? '');
+}
+
+/** Pregunta del quiz en el idioma actual (preguntaAleatoria de quiz.js si existe; si no, QUIZ al azar). */
+function elegirPregunta() {
+  if (typeof Quiz.preguntaAleatoria === 'function') return Quiz.preguntaAleatoria() || null;
+  const lista = Array.isArray(Quiz.QUIZ) ? Quiz.QUIZ : [];
+  if (!lista.length) return null;
+  const q = Phaser.Utils.Array.GetRandom(lista);
+  return { ...q, pregunta: tx(q.pregunta), opciones: q.opciones?.[getLang()] ?? q.opciones?.es ?? q.opciones, explicacion: tx(q.explicacion) };
+}
+
+/** Nombre localizado del nivel (nombreNivel de levels.js si existe); cae al nombre recibido. */
+function nombreDeNivel(id, fallback) {
+  const lvl = id && typeof Levels.getLevel === 'function' ? Levels.getLevel(id) : null;
+  if (lvl && typeof Levels.nombreNivel === 'function') return Levels.nombreNivel(lvl);
+  return tx(fallback) || (lvl ? tx(lvl.nombre) : '');
 }
 
 /**
@@ -65,7 +88,7 @@ export class LevelEndScene extends Phaser.Scene {
     // Bonus del quiz: solo visual/local a esta pantalla, no toca SaveSystem ni el registry.
     this.puntosMostrados = this.data_.puntos;
     this.hechos = elegirHechos(3);
-    this.quiz = Array.isArray(QUIZ) && QUIZ.length ? Phaser.Utils.Array.GetRandom(QUIZ) : null;
+    this.quiz = elegirPregunta();
     this.quizAnswered = false;
     this.respuestaIndex = null;
     this.laidOutOnce = false;
@@ -113,14 +136,15 @@ export class LevelEndScene extends Phaser.Scene {
     rib.fillStyle(hex(cfg.cinta), 1).fillRoundedRect(-ribbonW / 2, ry - ribbonH / 2, ribbonW, ribbonH, 10);
     rib.lineStyle(4, hex(PALETTE.marino), 1).strokeRoundedRect(-ribbonW / 2, ry - ribbonH / 2, ribbonW, ribbonH, 10);
     content.add(rib);
-    content.add(this.add.text(0, ry, cfg.titulo, {
+    content.add(this.add.text(0, ry, t(`end.${d.resultado}`), {
       fontFamily: FONT, fontSize: 30, fontStyle: 'bold', color: PALETTE.blanco,
       stroke: PALETTE.marino, strokeThickness: 6, align: 'center', wordWrap: { width: ribbonW - 24 },
     }).setOrigin(0.5));
     if (primeraVez && d.resultado === 'completo') this.sfx('win');
     y = ry + ribbonH / 2 + 16;
-    if (d.nivelNombre) {
-      content.add(this.add.text(0, y, d.nivelNombre, {
+    const nivelNombre = nombreDeNivel(d.nivelId, d.nivelNombre);
+    if (nivelNombre) {
+      content.add(this.add.text(0, y, nivelNombre, {
         fontFamily: FONT, fontSize: 15, fontStyle: 'bold', color: PALETTE.celeste,
       }).setOrigin(0.5, 0));
       y += 26;
@@ -181,15 +205,17 @@ export class LevelEndScene extends Phaser.Scene {
     panel.fillStyle(hex(PALETTE.marino), 0.95).fillRoundedRect(-pw / 2, py - ph / 2, pw, ph, 14);
     panel.lineStyle(3, hex(PALETTE.celeste), 1).strokeRoundedRect(-pw / 2, py - ph / 2, pw, ph, 14);
     content.add(panel);
-    this.puntosLineText = this.add.text(-pw / 2 + 22, py - ph / 2 + 28, `Puntos: ${this.puntosMostrados}`, {
+    this.puntosLineText = this.add.text(-pw / 2 + 22, py - ph / 2 + 28, t('end.puntos', { n: this.puntosMostrados }), {
       fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.amarillo,
     }).setOrigin(0, 0.5);
     content.add(this.puntosLineText);
-    [`Criaderos eliminados: ${d.limpios}${d.total ? ' / ' + d.total : ''}`, `Tiempo: ${fmtTiempo(d.tiempo)}`]
+    [t('end.criaderos', { n: `${d.limpios}${d.total ? ' / ' + d.total : ''}` }), t('end.tiempoLinea', { t: fmtTiempo(d.tiempo) })]
       .forEach((l, i) => {
-        content.add(this.add.text(-pw / 2 + 22, py - ph / 2 + 28 + (i + 1) * 42, l, {
+        const txt = this.add.text(-pw / 2 + 22, py - ph / 2 + 28 + (i + 1) * 42, l, {
           fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.blanco,
-        }).setOrigin(0, 0.5));
+        }).setOrigin(0, 0.5);
+        if (txt.width > pw - 44) txt.setFontSize(Math.max(13, Math.floor(20 * (pw - 44) / txt.width)));
+        content.add(txt);
       });
     y = py + ph / 2 + 22;
 
@@ -201,7 +227,7 @@ export class LevelEndScene extends Phaser.Scene {
     bub.fillTriangle(bx + bw / 2 - 4, byy + 10, bx + bw / 2 + 18, byy + 22, bx + bw / 2 - 4, byy + 34);
     bub.lineStyle(3, hex(PALETTE.marino), 1).strokeRoundedRect(bx - bw / 2, byy - bh / 2, bw, bh, 14);
     content.add(bub);
-    content.add(this.add.text(bx, byy, cfg.mensaje || MENSAJES[d.estrellas], {
+    content.add(this.add.text(bx, byy, cfg.conMensaje ? t(`end.msg.${d.resultado}`) : t(`end.msg.${d.estrellas}`), {
       fontFamily: FONT, fontSize: 16, fontStyle: 'bold', color: PALETTE.marino,
       wordWrap: { width: bw - 28 }, align: 'center',
     }).setOrigin(0.5));
@@ -215,7 +241,7 @@ export class LevelEndScene extends Phaser.Scene {
 
     // Aprendiste hoy
     const anchoTexto = 460;
-    content.add(this.add.text(0, y, 'Aprendiste hoy', {
+    content.add(this.add.text(0, y, t('end.aprendiste'), {
       fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.azulGorra,
     }).setOrigin(0.5, 0));
     y += 30;
@@ -225,12 +251,12 @@ export class LevelEndScene extends Phaser.Scene {
     content.add(hechosBg);
     const hechosTop = y;
     y += padV;
-    this.hechos.forEach((dato) => {
-      const t = this.add.text(-anchoTexto / 2 + padH, y, `• ${dato}`, {
+    this.hechos.claves.forEach((clave) => {
+      const txt = this.add.text(-anchoTexto / 2 + padH, y, `• ${fraseDe(this.hechos, clave)}`, {
         fontFamily: FONT, fontSize: 15, color: PALETTE.marino, wordWrap: { width: anchoTexto - padH * 2 },
       }).setOrigin(0, 0);
-      content.add(t);
-      y += t.height + 6;
+      content.add(txt);
+      y += txt.height + 6;
     });
     y += padV - 6;
     hechosBg.fillStyle(0x000000, 0.2).fillRoundedRect(-anchoTexto / 2, hechosTop + 3, anchoTexto, y - hechosTop, 12);
@@ -244,11 +270,11 @@ export class LevelEndScene extends Phaser.Scene {
     // Botones ("Intentar de nuevo" solo si la jornada no terminó completa: epidemia o tiempo)
     let btnY = y + 28;
     if (d.resultado !== 'completo') {
-      content.add(this.makeButton(0, btnY, 300, 52, 'Intentar de nuevo', PALETTE.teja, PALETTE.tejaOscura, 20, () => this.finish('nivel:reintentar')));
+      content.add(this.makeButton(0, btnY, 300, 52, t('end.reintentar'), PALETTE.teja, PALETTE.tejaOscura, 20, () => this.finish('nivel:reintentar')));
       btnY += 66;
     }
-    content.add(this.makeButton(100, btnY, 230, 56, 'Continuar', PALETTE.verde, PALETTE.verdeOscuro, 22, () => this.finish('nivel:continuar')));
-    content.add(this.makeButton(-125, btnY, 190, 52, 'Modo foto', PALETTE.grisClaro, PALETTE.gris, 18, () => this.finish('nivel:foto')));
+    content.add(this.makeButton(100, btnY, 230, 56, t('end.continuar'), PALETTE.verde, PALETTE.verdeOscuro, 22, () => this.finish('nivel:continuar')));
+    content.add(this.makeButton(-125, btnY, 190, 52, t('end.foto'), PALETTE.grisClaro, PALETTE.gris, 18, () => this.finish('nivel:foto')));
     const contentH = btnY + 30;
 
     // Escala todo para que quepa en el lienzo, en vez de reflujar cada sección por separado.
@@ -339,10 +365,10 @@ export class LevelEndScene extends Phaser.Scene {
 
   /** "+100" flotante junto al puntaje del resumen (solo visual, no toca SaveSystem ni el registry). */
   animarBonus() {
-    this.puntosLineText.setText(`Puntos: ${this.puntosMostrados}`);
+    this.puntosLineText.setText(t('end.puntos', { n: this.puntosMostrados }));
     this.pulso(this.puntosLineText);
     const bonus = this.add.text(
-      this.puntosLineText.x + this.puntosLineText.width + 10, this.puntosLineText.y, '+100',
+      this.puntosLineText.x + this.puntosLineText.width + 10, this.puntosLineText.y, t('end.bonus'),
       { fontFamily: FONT, fontSize: 18, fontStyle: 'bold', color: PALETTE.amarillo },
     ).setOrigin(0, 0.5).setAlpha(0);
     this.content.add(bonus);
@@ -381,10 +407,11 @@ export class LevelEndScene extends Phaser.Scene {
       g.lineStyle(2, hex(PALETTE.blanco), 0.6).strokeRoundedRect(-w / 2, -h / 2, w, h, 12);
     };
     draw(color);
-    const t = this.add.text(0, 0, label, {
+    const txt = this.add.text(0, 0, label, {
       fontFamily: FONT, fontSize: size, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5);
-    c.add([g, t]).setSize(...touchSize(w, h)).setInteractive({ useHandCursor: true })
+    if (txt.width > w - 24) txt.setFontSize(Math.max(12, Math.floor(size * (w - 24) / txt.width))); // etiquetas largas (EN)
+    c.add([g, txt]).setSize(...touchSize(w, h)).setInteractive({ useHandCursor: true })
       .on('pointerover', () => draw(hover))
       .on('pointerout', () => draw(color))
       .on('pointerdown', cb);

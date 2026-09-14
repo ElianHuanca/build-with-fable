@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
-import { FACTS } from '../data/facts.js';
+import { factsL } from '../data/facts.js';
+import { t } from '../i18n/index.js';
 import { AudioManager } from './AudioManager.js';
 import { Layout } from './Layout.js';
 
@@ -351,13 +352,14 @@ export class TouchControls {
     scene.time.delayedCall(LUPA_RECARGA_MS, () => this.pintarLupa());
 
     const activo = scene.activo;
-    if (activo && FACTS[activo.type]) {
-      scene.scene.get('HUD')?.mostrarDato?.(FACTS[activo.type].dato);
+    const facts = factsL();
+    if (activo && facts[activo.type]) {
+      scene.scene.get('HUD')?.mostrarDato?.(facts[activo.type].dato);
       return;
     }
     const objetivo = scene.criaderoMasCercano?.();
     if (!objetivo) {
-      scene.scene.get('HUD')?.mostrarDato?.('¡No quedan criaderos en el barrio!', 2000);
+      scene.scene.get('HUD')?.mostrarDato?.(t('game.sinCriaderos'), 2000);
       return;
     }
     this.flechaObjetivo = objetivo;
@@ -375,7 +377,7 @@ export class TouchControls {
     const R = 56;
     this.flecha.setPosition(player.x + Math.cos(ang) * R, player.y + Math.sin(ang) * R).setRotation(ang);
     const metros = Math.round(Phaser.Math.Distance.Between(player.x, player.y, c.x, c.y) / 64);
-    this.flechaTexto.setPosition(player.x, player.y - 58).setText(`Criadero a ${metros} m`);
+    this.flechaTexto.setPosition(player.x, player.y - 58).setText(t('game.criaderoA', { n: metros }));
   }
 
   /** Dibuja el anillo de energía alrededor de CORRER. */
@@ -443,18 +445,18 @@ export class PauseMenu {
     const bg = scene.add.graphics();
     bg.fillStyle(hex(PALETTE.marino), 0.96).fillRoundedRect(-PW / 2, -PH / 2, PW, PH, 16);
     bg.lineStyle(3, hex(PALETTE.celeste), 1).strokeRoundedRect(-PW / 2, -PH / 2, PW, PH, 16);
-    const titulo = scene.add.text(0, -PH / 2 + 28, 'Pausa', {
+    const titulo = scene.add.text(0, -PH / 2 + 28, t('pausa.titulo'), {
       fontFamily: FONT, fontSize: 26, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0.5);
     this.panel.add([bg, titulo]);
 
     const filaY = (i) => -PH / 2 + 78 + i * 60;
-    this.btnContinuar = this.boton(0, filaY(0), 'Continuar', PALETTE.verde, () => this.cerrar());
+    this.btnContinuar = this.boton(0, filaY(0), t('pausa.continuar'), PALETTE.verde, () => this.cerrar());
     this.btnSonido = this.boton(0, filaY(1), '', PALETTE.celeste, () => {
       AudioManager.setEnabled(!AudioManager.enabled);
       this.refrescarSonido();
     });
-    this.btnSalir = this.boton(0, filaY(2), 'Salir al menú', PALETTE.teja, () => { this.cerrar(); this.onSalir?.(); });
+    this.btnSalir = this.boton(0, filaY(2), t('pausa.salir'), PALETTE.teja, () => { this.cerrar(); this.onSalir?.(); });
     this.panel.add([this.btnContinuar, this.btnSonido, this.btnSalir]);
     this.panel.setScrollFactor(0, 0, true);
     this.refrescarSonido();
@@ -495,7 +497,7 @@ export class PauseMenu {
   }
 
   refrescarSonido() {
-    this.btnSonido.label.setText(`Sonido: ${AudioManager.enabled ? 'ON' : 'OFF'}`);
+    this.btnSonido.label.setText(t('pausa.sonido', { estado: t(AudioManager.enabled ? 'pausa.on' : 'pausa.off') }));
   }
 
   abrir() {

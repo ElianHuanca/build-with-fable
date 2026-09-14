@@ -1,8 +1,9 @@
 # Bitácora de progreso — Dengue Invaders 2D
 
 Estado del MVP por fase, según el [plan de desarrollo](PLAN_DESARROLLO.md).
-El plan de la v2 ("Agente SEDES") está en [PLAN_V2_JUGABILIDAD.md](PLAN_V2_JUGABILIDAD.md).
-Última actualización: 2026-09-13.
+El plan de la v2 ("Agente SEDES") está en [PLAN_V2_JUGABILIDAD.md](PLAN_V2_JUGABILIDAD.md) y el de
+la v3 ("Biblioteca, cámara IA, visibilidad, inglés") en [PLAN_V3_BIBLIOTECA_IA.md](PLAN_V3_BIBLIOTECA_IA.md).
+Última actualización: 2026-09-14.
 
 | Fase | Nombre | Estado |
 |---|---|---|
@@ -17,6 +18,85 @@ El plan de la v2 ("Agente SEDES") está en [PLAN_V2_JUGABILIDAD.md](PLAN_V2_JUGA
 | v2 · Ola 1 / Agentes B-H | HUD, brotes, minimapa, estación/camioneta, assets v2, contenido, controles v2 | Hecha |
 | v2 · Ola 2 | Integración en GameScene + documentación | Hecha |
 | v2 · Ola 3 | QA vertical/horizontal, video demo v2 | No iniciada |
+| v3 · Ola 1 / Agentes A–E | Biblioteca SEDES, cámara IA (demo), enjambres y fumigación, visibilidad, assets v3 | Hecha (commit `9ab1d93`) |
+| v3 · Ola 2 | i18n (F1/F2/G), QA, documentación | En curso |
+| v3 · Cierre | QA final, video v3, push | Pendiente |
+
+---
+
+## v3 — Biblioteca, cámara IA, visibilidad, inglés
+
+Plan: [PLAN_V3_BIBLIOTECA_IA.md](PLAN_V3_BIBLIOTECA_IA.md). Reglas de juego nuevas en
+[GDD.md](GDD.md) §11–15; contratos técnicos en [ARQUITECTURA.md](ARQUITECTURA.md) §2.7.
+Regla del usuario: **no se hace push hasta terminar todo**; se registra aquí cada ola.
+
+### Ola 1 — funcionalidades · Hecha
+
+Cinco agentes en paralelo sobre archivos disjuntos, integrados en el commit `9ab1d93`
+("v3 wave 1"). Verificado con `node --check` y arranque en el navegador (Menu → Biblioteca,
+LevelSelect → Game → C/cámara → Library desde la estación) sin errores de consola.
+
+| # | Agente | Archivos | Qué quedó |
+|---|---|---|---|
+| A | Biblioteca | `src/scenes/LibraryScene.js`, `src/data/library.js`, `src/systems/Badges.js`, botón en `src/scenes/MenuScene.js`, fila de insignias en `src/scenes/LevelSelectScene.js` | Escena `Library` con 5 pestañas (Mosquitos, Ciclo de vida, Síntomas, Prevención, Mitos), carrusel (flechas, teclado, deslizar), 6 mitos que se voltean con un toque, 4 insignias persistidas (`dengue.insignias`) y bonus de estudio +50 (`Badges.bonusPendiente()` / `consumirBonus()`, consumido por `GameScene.create()`) |
+| B | Cámara IA | `src/scenes/CameraScene.js`, `src/systems/CameraFX.js`, `src/data/species.js` | Escena `Camera`: visor con marco y retícula → flash → análisis ~2,2 s (escáner, puntos de referencia, barra de confianza, consola) → tarjeta de resultado (especie, confianza 87–98 %, señales, recomendación) con etiqueta **DEMO**; álbum en `dengue.album`; emite `camera:especie` / `camera:cerrar` |
+| C | Mosquitos y fumigación | `src/objects/Brote.js`, `src/systems/FumigationFX.js` | `Brote` pasa a ser un `Container` con 8/14/22 mosquitos individuales (`mosq_<especie>_mini`) que orbitan y vibran, tope global de 70 sprites; fumigación con rociador en la mano (o en el tanque de la camioneta), cono de niebla, mosquitos que caen uno a uno desde el 40 % del progreso, gotas y pulso verde; `cancelFumigation` / `fumigationProgress` |
+| D | Visibilidad y enganches | `src/scenes/GameScene.js`, `src/scenes/HUDScene.js`, `src/systems/TouchControls.js`, `src/systems/InteractionPrompt.js`, `src/systems/CameraZoom.js`, `src/systems/Compass.js` | `aplicarMargenCamara()` (límites de cámara ampliados 150/250 px en vertical táctil), `actualizarEvitar()` cada 100 ms → `HUD.evitar(rects)` (paneles al 25 % de alpha) y minimapa al 35 %; cartel de detección y banner de tips en el lado opuesto al objetivo (`prompt.setLado`, `hud.setLadoDato`); panel de misiones plegable en vertical; botón CÁMARA táctil y tecla `C` (`abrirCamara()`); `E`/ACCIÓN en la estación abre la Biblioteca (`abrirBiblioteca()`); `pausaSuave()` / `reanudar()` para los overlays |
+| E | Assets v3 | `tools/gen-assets.mjs` (`buildV3`), `public/assets/sprites/`, `public/assets/ui/` | 4 especies grandes y mini (`mosq_<id>`, `mosq_<id>_mini`), `rociador`, `niebla`, `ciclo_huevo|larva|pupa|adulto`, `insignia_explorador|detective|guardian|fotografo|bloqueada`, `icon_camera_big`, `icon_library`, `icon_lang`, `tab_*` |
+
+En la misma ola se sentó el núcleo de i18n (`src/i18n/index.js`, `es.js`, `en.js`) y el catálogo
+`src/data/species.js` con textos `{ es, en }`, que la Ola 2 completa.
+
+### Ola 2 — inglés, QA y documentación · En curso
+
+| # | Agente | Entregable | Estado |
+|---|---|---|---|
+| F1 | i18n menús y flujo | `src/i18n/dict/menus.js` (Boot, Menu, LevelSelect, Popup, LevelEnd, Photo, Configuración) y reemplazo de textos en esas escenas; selector ES/EN en el menú y en Configuración | En curso |
+| F2 | i18n juego | Diccionario de `GameScene`/`HUDScene`/`TouchControls`/`InteractionPrompt`/`AlertToast` (avisos, tips del HUD, botones) | En curso |
+| G | i18n datos | `src/data/tips.js`, `facts.js`, `quiz.js` a `{ es, en }`; biblioteca y especies ya nacieron bilingües | En curso |
+| H | QA | Flujo completo en ES y EN, vertical (Pixel 5) y escritorio; correcciones | Pendiente |
+| I | Documentación | Esta bitácora, `GDD.md`, `ARQUITECTURA.md`, `README.md`, `ATTRIBUTION.md`, sección "Estado" del plan v3 | Hecha (esta entrega) |
+
+### Decisiones
+
+- **Cámara IA simulada, con etiqueta DEMO.** No hay ningún modelo de visión: la especie sale del
+  brote fotografiado (`brote.especieId`) o, si no hay brote a menos de 160 px, de
+  `especieAleatoria()` con los pesos de `species.js` (Aedes aegypti 55 %). La confianza (87–98 %)
+  y los puntos de referencia son pseudoaleatorios con semilla estable por foto. La pantalla lo
+  aclara con la etiqueta "DEMO" y la documentación lo repite en cada lugar donde se menciona.
+- **Dos cámaras para el zoom** (`CameraZoom.js`): la principal hace zoom al mundo (~9 tiles de
+  ancho en vertical, ~15 en horizontal) y una segunda `uiCam` sin zoom dibuja todo lo que tenga
+  `scrollFactor 0` (joystick, botones, minimapa, cartel, avisos). Así los controles no se
+  escalan con el mundo y `worldToScreen()` da coordenadas de pantalla fiables para "evitar".
+- **Los paneles del HUD se apartan (alpha) en vez de reubicarse.** Se descartó mover los paneles
+  cuando tapan al jugador o a un brote: reubicarlos cada 100 ms genera saltos y rompe la memoria
+  espacial del jugador. En cambio, `HUD.evitar(rects)` baja el panel al 25 % con un tween de
+  150 ms y lo restaura al 90 % al despejarse; el minimapa hace lo mismo al 35 %. Solo el cartel de
+  detección y el banner de tips cambian de lado (arriba/abajo), porque son transitorios.
+- **i18n con diccionarios parciales fusionados.** `src/i18n/index.js` carga `./dict/*.js` con
+  `import.meta.glob(..., { eager: true })` y hace `Object.assign` sobre `es.js`/`en.js`. Cada
+  agente de la Ola 2 agrega su propio archivo en `src/i18n/dict/` sin tocar los de los demás
+  (evita conflictos entre agentes en paralelo). Los datos (`species.js`, `library.js`, y en la
+  Ola 2 `tips/facts/quiz`) usan objetos `{ es, en }` leídos con `tx()`/`txList()` en vez de claves.
+- **Fumigar con `E` es "mantener"; con el botón del cartel es un toque.** `accionInicio()` /
+  `accionFin()` (tecla `E` y botón ACCIÓN táctil) empiezan la fumigación y soltar la cancela
+  (`cancelFumigation`, los mosquitos ya caídos no vuelven); el clic en el botón del cartel de
+  detección (`intentarLimpiar()`) la deja correr sola. Esto reemplaza la decisión de la v2 ("un
+  solo toque") documentada en GDD §3.
+- **Insignias y álbum en `localStorage`**, siguiendo el patrón de `SaveSystem` (copia en memoria
+  si el almacenamiento falla): `dengue.insignias`, `dengue.album`, `dengue.lang`.
+
+### Pendientes
+
+- QA final de la Ola 2 en ES y EN (vertical y escritorio): textos que se salen de los paneles en
+  inglés, cambio de idioma en caliente en `Game`/`HUD` (hoy solo `LibraryScene` escucha `lang`).
+- Los avisos de `GameScene` (`abrirCamara`, `onEspecieIdentificada`, bonus de estudio) siguen en
+  español fijo hasta que F2 los pase por `t()`; `onEspecieIdentificada` usa `nombre.es`.
+- Video demo v3 y capturas nuevas (Biblioteca, cámara IA, enjambre grande, vertical).
+- **Push al cierre**, por pedido del usuario: un commit por ola en local y push solo cuando
+  termine la Ola 2 y el QA; luego publicar el enlace de demo actualizado.
+- Herencia de v2 sin resolver: `MissionManager` sigue sin misiones de brotes/estación (ver v2 ·
+  Ola 2), y el video/QA de la v2 · Ola 3 queda absorbido por el QA de la v3.
 
 ---
 
@@ -359,3 +439,12 @@ Ninguno de los 3 entregables de esta ola (QA vertical en Pixel 5, QA horizontal/
 | Contenido educativo (v2) | `src/data/tips.js`, `src/data/quiz.js` | Tips por acción y preguntas de opción múltiple del resumen |
 | Controles táctiles (v2) | `src/systems/TouchControls.js` | Botones ACCIÓN/LUPA/CORRER/VEHÍCULO/PAUSA, `PauseMenu` |
 | Layout responsivo (v2) | `src/systems/Layout.js` | Anclas, márgenes seguros, ancho de panel, `Scale.RESIZE` |
+| Biblioteca SEDES (v3) | `src/scenes/LibraryScene.js`, `src/data/library.js` | Pestañas, carrusel de tarjetas, mitos que se voltean, marca tarjetas leídas |
+| Insignias (v3) | `src/systems/Badges.js` | 4 insignias, tarjetas leídas y bonus de estudio en `localStorage 'dengue.insignias'` |
+| Cámara IA — demo (v3) | `src/scenes/CameraScene.js`, `src/systems/CameraFX.js` | Visor, análisis simulado, resultado, álbum `'dengue.album'`; flash, escáner, puntos, retícula |
+| Especies (v3) | `src/data/species.js` | Catálogo `{ es, en }` de 4 mosquitos, `especieAleatoria()` con pesos |
+| i18n (v3) | `src/i18n/index.js`, `es.js`, `en.js`, `dict/*.js` | `t/tx/txList`, `setLang`, `'dengue.lang'`, evento `game.events 'lang'` |
+| Zoom con dos cámaras (v3) | `src/systems/CameraZoom.js` | `applyCameraZoom`, `uiCam` sin zoom para la UI, `worldToScreen` |
+| Enjambres (v3) | `src/objects/Brote.js` | Container con 8/14/22 mosquitos por nivel, `especieId`, `cancelarFumigacion()` |
+| Fumigación v3 | `src/systems/FumigationFX.js` | Rociador, cono de niebla, caída uno a uno, `cancelFumigation`, `fumigationProgress` |
+| Visibilidad (v3) | `src/scenes/GameScene.js`, `src/scenes/HUDScene.js` | `aplicarMargenCamara`, `actualizarEvitar` → `HUD.evitar`, cartel/banner en el lado opuesto, misiones plegables |
