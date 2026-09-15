@@ -168,19 +168,21 @@ export class InteractionPrompt {
    * Textos según el objetivo: 'criadero' ("¡Criadero detectado!", "E · Eliminar agua", "Presiona E")
    * o 'brote' ("¡Brote de mosquitos!", "E · Fumigar", "Mantén E").
    * o 'estacion' ("Estación SEDES", "E · Biblioteca", "Presiona E").
-   * @param {'criadero'|'brote'|'estacion'} modo
+   * o 'basura' ("Basura en la calle", "E · Recoger", "Presiona E") — plan v4 §2.
+   * @param {'criadero'|'brote'|'estacion'|'basura'} modo
    */
   setModo(modo) {
     if (modo === this.modo) return;
     this.modo = modo;
     const brote = modo === 'brote';
     const estacion = modo === 'estacion';
-    this.title.setText(t(estacion ? 'prompt.estacion' : brote ? 'prompt.brote' : 'prompt.criadero'));
-    this.label.setText(t(estacion ? 'prompt.biblioteca' : brote ? 'prompt.fumigar' : 'prompt.eliminar'));
+    const basura = modo === 'basura';
+    this.title.setText(t(estacion ? 'prompt.estacion' : brote ? 'prompt.brote' : basura ? 'prompt.basura' : 'prompt.criadero'));
+    this.label.setText(t(estacion ? 'prompt.biblioteca' : brote ? 'prompt.fumigar' : basura ? 'prompt.recoger' : 'prompt.eliminar'));
     // Fumigar es "mantener presionado" (GDD §13): la pista del cartel táctil no debe decir "toca".
     this.hint?.setText(t(brote ? 'prompt.mantenBoton' : 'prompt.tocaBoton'));
     const etiqueta = t(this.sinBoton ? (brote ? 'prompt.mantenBotonCorto' : 'prompt.tocaBotonCorto')
-      : this.isTouch ? (estacion ? 'prompt.tocaBiblioteca' : brote ? 'prompt.tocaFumigar' : 'prompt.tocaEliminar')
+      : this.isTouch ? (estacion ? 'prompt.tocaBiblioteca' : brote ? 'prompt.tocaFumigar' : basura ? 'prompt.tocaRecoger' : 'prompt.tocaEliminar')
         : (brote ? 'prompt.mantenE' : 'prompt.presionaE'));
     this.worldText.setText(etiqueta);
     const lw = this.worldText.width + 14, lh = this.worldText.height + 8;

@@ -104,10 +104,12 @@ export class LevelSelectScene extends Phaser.Scene {
         y += cardH + cardGap;
       });
     } else {
-      // Fila: centrada, escalada si no entra a lo ancho.
+      // Fila: centrada, escalada si no entra a lo ancho o si no entra al alto (pantallas horizontales
+      // bajitas, ej. 640x320): sin el tope de alto la tarjeta a escala 1 (340px) se salía del área
+      // disponible (availH) y su botón "Jugar" quedaba tapado por "Volver" del pie de página.
       const gap = 40;
       const totalW = LEVELS.length * CARD_W + (LEVELS.length - 1) * gap;
-      const scale = Math.min(1, availW / totalW);
+      const scale = Math.min(1, availW / totalW, availH / CARD_H);
       const cardW = CARD_W * scale, cardGap = gap * scale;
       const scaledTotalW = LEVELS.length * cardW + (LEVELS.length - 1) * cardGap;
       const startX = W / 2 - scaledTotalW / 2 + cardW / 2;

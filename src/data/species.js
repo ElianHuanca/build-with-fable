@@ -2,7 +2,11 @@
  * Catálogo de especies de mosquito (v3): biblioteca de aprendizaje y cámara IA (demo).
  * Textos en { es, en }; usar tx()/txList() de src/i18n para leerlos.
  * `sprite`: key de textura del mosquito grande (ilustración) y `spriteMini` del pequeño
- * (enjambres); los genera tools/gen-assets.mjs. `frecuencia`: peso para la demo de la cámara.
+ * (enjambres); los genera tools/gen-assets.mjs. `fotos`: 1-2 fotos reales (dominio público o
+ * CC, ver ATTRIBUTION.md) usadas en la ficha de la Biblioteca SEDES en vez del dibujo, cada una
+ * con el ángulo mostrado (`angulo`) para poder distinguir especies parecidas (p. ej. aegypti vs
+ * albopictus se diferencian mejor de arriba, por el dibujo del tórax). `frecuencia`: peso para
+ * la demo de la cámara.
  * Contenido educativo general; verificar con la fuente oficial (SEDES / OPS) antes de uso público.
  */
 export const SPECIES = [
@@ -13,6 +17,10 @@ export const SPECIES = [
     cientifico: 'Aedes aegypti',
     color: '#2c3e50',
     sprite: 'mosq_aegypti', spriteMini: 'mosq_aegypti_mini',
+    fotos: [
+      { key: 'mosq_aegypti_foto', angulo: { es: 'Vista lateral', en: 'Side view' } },
+      { key: 'mosq_aegypti_foto2', angulo: { es: 'Vista superior', en: 'Top view' } },
+    ],
     frecuencia: 0.55,
     reconocer: {
       es: ['Cuerpo negro con rayas blancas en patas y cuerpo', 'Dibujo en forma de lira (blanco) en el tórax', 'Pequeño: 4 a 7 mm', 'Vuela bajo y pica en piernas y tobillos'],
@@ -31,6 +39,10 @@ export const SPECIES = [
     cientifico: 'Aedes albopictus',
     color: '#1e2a36',
     sprite: 'mosq_albopictus', spriteMini: 'mosq_albopictus_mini',
+    fotos: [
+      { key: 'mosq_albopictus_foto', angulo: { es: 'Vista lateral', en: 'Side view' } },
+      { key: 'mosq_albopictus_foto2', angulo: { es: 'Vista superior', en: 'Top view' } },
+    ],
     frecuencia: 0.2,
     reconocer: {
       es: ['Negro con rayas blancas muy marcadas', 'Una sola línea blanca en el centro del tórax', 'Más agresivo de día', 'Vive en zonas con vegetación'],
@@ -49,6 +61,10 @@ export const SPECIES = [
     cientifico: 'Culex quinquefasciatus',
     color: '#8a6d3b',
     sprite: 'mosq_culex', spriteMini: 'mosq_culex_mini',
+    fotos: [
+      { key: 'mosq_culex_foto', angulo: { es: 'Vista lateral', en: 'Side view' } },
+      { key: 'mosq_culex_foto2', angulo: { es: 'En una pared', en: 'On a wall' } },
+    ],
     frecuencia: 0.18,
     reconocer: {
       es: ['Color marrón claro, sin rayas blancas', 'Zumbido fuerte de noche', 'Se posa paralelo a la pared', 'Más grande que el Aedes'],
@@ -67,6 +83,10 @@ export const SPECIES = [
     cientifico: 'Anopheles darlingi',
     color: '#5a4632',
     sprite: 'mosq_anopheles', spriteMini: 'mosq_anopheles_mini',
+    fotos: [
+      { key: 'mosq_anopheles_foto', angulo: { es: 'Vista lateral', en: 'Side view' } },
+      { key: 'mosq_anopheles_foto2', angulo: { es: 'Postura inclinada', en: 'Tilted posture' } },
+    ],
     frecuencia: 0.07,
     reconocer: {
       es: ['Se posa con el cuerpo inclinado, "de cabeza"', 'Alas con manchas claras y oscuras', 'Palpos tan largos como la trompa', 'Zonas rurales y selva'],
@@ -87,5 +107,53 @@ export function especieAleatoria(rnd = Math.random) {
   const total = SPECIES.reduce((a, s) => a + s.frecuencia, 0);
   let r = rnd() * total;
   for (const s of SPECIES) { r -= s.frecuencia; if (r <= 0) return s; }
+  return SPECIES[0];
+}
+
+/**
+ * Ciclo día/noche (v4, plan `docs/PLAN_V4_MUNDO_VIVO.md` §3): la jornada completa (4 min) se
+ * reparte en 5 franjas y cada una multiplica la `frecuencia` base de cada especie según su
+ * `horario` real (arriba en este archivo), para que los brotes que aparecen en cada franja
+ * coincidan con lo que dice la ficha educativa — el dato deja de ser solo texto y se vuelve
+ * parte del juego. `hasta`: fracción (0..1) de la jornada en la que termina la franja.
+ */
+export const FRANJAS_DIA = [
+  {
+    id: 'manana', hasta: 0.20, nombre: { es: 'Mañana', en: 'Morning' },
+    pesos: { aegypti: 2.5, albopictus: 1.2, culex: 0.3, anopheles: 0.2 },
+  },
+  {
+    id: 'mediodia', hasta: 0.45, nombre: { es: 'Mediodía', en: 'Midday' },
+    pesos: { aegypti: 0.6, albopictus: 1.5, culex: 0.3, anopheles: 0.1 },
+  },
+  {
+    id: 'tarde', hasta: 0.65, nombre: { es: 'Atardecer', en: 'Dusk' },
+    pesos: { aegypti: 2.2, albopictus: 1.4, culex: 0.4, anopheles: 0.3 },
+  },
+  {
+    id: 'noche', hasta: 0.85, nombre: { es: 'Noche', en: 'Night' },
+    pesos: { aegypti: 0.2, albopictus: 0.3, culex: 2.5, anopheles: 0.8 },
+  },
+  {
+    id: 'madrugada', hasta: 1.01, nombre: { es: 'Madrugada', en: 'Early dawn' },
+    pesos: { aegypti: 0.1, albopictus: 0.2, culex: 1.5, anopheles: 2.5 },
+  },
+];
+
+/** Franja horaria vigente según la fracción (0..1) transcurrida de la jornada. */
+export function franjaActual(fraccionDia) {
+  const f = Math.min(1, Math.max(0, Number(fraccionDia) || 0));
+  return FRANJAS_DIA.find((fr) => f <= fr.hasta) || FRANJAS_DIA[FRANJAS_DIA.length - 1];
+}
+
+/** Especie al azar ponderada por `frecuencia` × el peso de la franja horaria vigente. */
+export function especieSegunHorario(fraccionDia, rnd = Math.random) {
+  const franja = franjaActual(fraccionDia);
+  const total = SPECIES.reduce((a, s) => a + s.frecuencia * (franja.pesos[s.id] ?? 1), 0);
+  let r = rnd() * total;
+  for (const s of SPECIES) {
+    r -= s.frecuencia * (franja.pesos[s.id] ?? 1);
+    if (r <= 0) return s;
+  }
   return SPECIES[0];
 }

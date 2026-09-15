@@ -3,7 +3,7 @@ import { PALETTE, hex } from '../data/palette.js';
 import { touchSize } from '../data/ui.js';
 import { Layout } from '../systems/Layout.js';
 import { CameraFX, mulberry } from '../systems/CameraFX.js';
-import { SPECIES, speciesById, especieAleatoria } from '../data/species.js';
+import { SPECIES, speciesById, especieAleatoria, especieSegunHorario } from '../data/species.js';
 import { t, tx, txList } from '../i18n/index.js';
 
 const FONT = 'Arial, sans-serif';
@@ -30,6 +30,10 @@ export class CameraScene extends Phaser.Scene {
     this.brote = data.brote ?? null;
     this.especieId = data.especieId ?? this.brote?.especieId ?? null;
     this.snapKey = data.snapshotKey && this.textures.exists(data.snapshotKey) ? data.snapshotKey : null;
+    // Fracción del día (0..1) de la jornada simulada, para que la demo (sin brote real cerca)
+    // elija especie ponderada por horario, igual que OutbreakManager. Si no llega, se mantiene
+    // el sorteo uniforme (especieAleatoria) para no romper a quien lance la escena sin este dato.
+    this.fraccionDia = data.fraccionDia ?? null;
     this.fase = 'visor';
     this.done = false;
     this.busy = false;
@@ -259,7 +263,12 @@ export class CameraScene extends Phaser.Scene {
     // Especie y confianza estables por foto
     this.seed = (Date.now() % 100000) + 1;
     const rnd = mulberry(this.seed);
-    this.especie = this.especieId ? speciesById(this.especieId) : especieAleatoria(rnd);
+    // Con brote real (especieId) esa especie manda siempre; sin brote, si tenemos la hora del día
+    // usamos el sorteo ponderado por horario (mismo criterio que los brotes reales), y si no,
+    // sorteo uniforme como antes.
+    this.especie = this.especieId
+      ? speciesById(this.especieId)
+      : (this.fraccionDia != null ? especieSegunHorario(this.fraccionDia, rnd) : especieAleatoria(rnd));
     this.confianza = 87 + Math.floor(rnd() * 12); // 87..98
     const flash = CameraFX.flash(this, 150);
     this.time.delayedCall(150, () => {

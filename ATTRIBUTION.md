@@ -11,6 +11,40 @@ imágenes de terceros. La guía de estilo está en `docs/ASSET_PROMPTS.md`.
 Si se reemplazan por ilustraciones propias o generadas con IA, añade aquí su autoría y
 licencia.
 
+### Fotos reales de las 4 especies (Biblioteca SEDES, v3.1-v3.2)
+
+En `public/assets/fotos/` se agregaron fotografías reales por especie de
+`src/data/species.js` (campo `fotos`, un array con 2 ángulos cada una: lateral y superior/
+postura característica) para que la ficha de la Biblioteca SEDES muestre al mosquito real en
+vez del dibujo, y para que se puedan distinguir especies parecidas (sobre todo *Aedes aegypti*
+vs *Aedes albopictus*, que se diferencian mejor de arriba por el dibujo del tórax: lira de dos
+líneas en aegypti, una sola línea central en albopictus). La ilustración generada se mantiene
+para los sprites de juego (enjambres, cámara IA, animaciones). Todas redimensionadas a 640 px
+de ancho para el proyecto:
+
+| Archivo | Especie mostrada | Ángulo | Fuente | Licencia | Fotógrafo/crédito |
+|---|---|---|---|---|---|
+| `mosq_aegypti_foto.jpg` | *Aedes aegypti* | Lateral (picando) | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Aedes_aegypti_CDC-Gathany.jpg) (CDC PHIL #9258) | Dominio público (obra del gobierno de EE. UU.) | James Gathany / CDC |
+| `mosq_aegypti_foto2.jpg` | *Aedes aegypti* | Superior (dorso, lira del tórax) | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:W_MOSQUITO_AEDES_BACK-2.jpg) | CC BY-SA 4.0 | Fedaro (Fernando da Rosa) — especimen del programa de extensión de la Universidad de la República, Montevideo, Uruguay |
+| `mosq_albopictus_foto.jpg` | *Aedes albopictus* | Lateral (picando) | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:CDC-Gathany-Aedes-albopictus-1.jpg) (CDC PHIL) | Dominio público (obra del gobierno de EE. UU.) | James Gathany / CDC |
+| `mosq_albopictus_foto2.jpg` | *Aedes albopictus* | Superior (posado en pared, línea del tórax) | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Aedes_albopictus_on_the_wall_-_1.jpg) | CC BY-SA 4.0 | Kyu3a — Komaki, Aichi, Japón |
+| `mosq_culex_foto.jpg` | *Culex quinquefasciatus* | Lateral (picando, en un dedo) | [CDC PHIL #1767](https://phil.cdc.gov/Details.aspx?pid=1767) | Dominio público (obra del gobierno de EE. UU.) | James Gathany / CDC-William Brogdon |
+| `mosq_culex_foto2.jpg` | *Culex quinquefasciatus* | En una pared (color uniforme, sin rayas) | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Culex_quinquefasciatus_-_inat_83267718.jpg) | CC BY-SA 4.0 | Robert Webster, vía iNaturalist — Mayes County, Oklahoma, EE. UU. |
+| `mosq_anopheles_foto.jpg` | *Anopheles albimanus* (vector de malaria de América Latina; la ficha describe el género *Anopheles*, no necesariamente *A. darlingi*) | Lateral | [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Anopheles_albimanus_mosquito.jpg) (CDC PHIL #7861) | Dominio público (obra del gobierno de EE. UU.) | James Gathany / CDC |
+| `mosq_anopheles_foto2.jpg` | *Anopheles albimanus* | Postura inclinada (clave para reconocerlo) | [CDC PHIL #7864](https://phil.cdc.gov/Details.aspx?pid=7864) | Dominio público (obra del gobierno de EE. UU.) | James Gathany / CDC |
+
+Las fotos CC BY-SA 4.0 y CC BY se usan con atribución (esta tabla) según lo exige la
+licencia; al modificarlas (recorte/compresión) esa condición de la licencia sigue vigente. Se
+descartaron candidatas con licencia dudosa (p. ej. una foto de Culex en Flickr marcada "CC
+BY 2.0" que llevaba un aviso de copyright visible de un tercero distinto del subidor) y una
+foto de *Aedes aegypti* bajo GFDL 1.2 (licencia poco práctica para un solo archivo embebido).
+
+Antes de uso público, verificar que las fotos sigan siendo apropiadas para el público
+infantil objetivo (10 a 14 años) y, si se desea mostrar *Anopheles darlingi* en particular
+en vez de *A. albimanus*, buscar fotos de dominio público de esa especie. No se encontraron
+fotos de frente (de cara) con licencia libre para ninguna de las 4 especies; si aparecen más
+adelante, se pueden sumar como tercer ángulo en `species.js` → `fotos`.
+
 ## Sonidos y música
 
 Los 11 efectos (`step`, `detect`, `gluglu`, `pop`, `points`, `win`, `click`, `alert`, `spray`,

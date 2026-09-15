@@ -1,12 +1,15 @@
 import Phaser from 'phaser';
 import { Brote } from '../objects/Brote.js';
+import { especieSegunHorario, franjaActual } from '../data/species.js';
 
 // Primer brote de la jornada (GDD sección 3) e intervalo entre los siguientes (al azar tras cada spawn).
 const PRIMER_SPAWN_MS = 15000;
 const SPAWN_MIN_MS = 25000;
 const SPAWN_MAX_MS = 40000;
-// Brotes activos a la vez como máximo: si se alcanza, el spawn se salta y se espera el próximo intervalo.
-const MAX_ACTIVOS = 3;
+/** Brotes activos a la vez como máximo: si se alcanza, `update()` salta el spawn y espera el
+ * próximo intervalo. Exportado: `GameScene` lo respeta también al crear un brote fuera del
+ * `spawn()` automático, p. ej. cuando una `Basura` madura — ver `vecinoBotoBasura`. */
+export const MAX_ACTIVOS = 3;
 // Probabilidad de aparecer cerca de un criadero sucio en vez de en un punto al azar del mapa.
 const PROB_CERCA_CRIADERO = 0.7;
 const CERCA_MIN_PX = 80;
@@ -23,6 +26,11 @@ const INTENTOS_POSICION = 30;
  *
  * `.onChange(cb)` se dispara con `cb(this.activos)` cuando un brote aparece, crece de nivel
  * (el propio Brote emite 'crecio') o se fumiga (Brote emite 'fumigado').
+ *
+ * Ciclo día/noche (v4): con `jornadaMs` en las opciones, cada `spawn()` elige la especie del
+ * nuevo brote con `especieSegunHorario()` (`src/data/species.js`) según qué franja de la
+ * jornada esté corriendo, en vez de un peso fijo. `.onFranjaChange(cb)` avisa cuando cambia de
+ * franja (nunca en la primera, para no disparar un aviso apenas arranca la jornada).
  */
 export class OutbreakManager {
   /**
@@ -31,19 +39,26 @@ export class OutbreakManager {
    *   solidos?: Array<{x:number,y:number}> }} opts
    *   criaderos: lista viva de criaderos del nivel (se lee `state` en cada spawn);
    *   bounds: rectángulo del mapa donde pueden aparecer los brotes;
-   *   solidos: centros de los objetos sólidos del nivel (los brotes evitan nacer encima).
+   *   solidos: centros de los objetos sólidos del nivel (los brotes evitan nacer encima);
+   *   jornadaMs: duración total de la jornada, para calcular la franja horaria (ver `species.js`
+   *   `FRANJAS_DIA`); sin este dato, `especieSegunHorario` recibe siempre fracción 0 (franja
+   *   'mañana').
    */
-  constructor(scene, { criaderos = [], bounds, solidos = [] } = {}) {
+  constructor(scene, { criaderos = [], bounds, solidos = [], jornadaMs = 0 } = {}) {
     this.scene = scene;
     this.criaderos = criaderos;
     this.bounds = bounds || { x: 0, y: 0, w: scene.scale.width, h: scene.scale.height };
     this.solidos = solidos;
+    this.jornadaMs = jornadaMs;
     this.activos = [];
     this.onChangeCb = null;
+    this.onFranjaCb = null;
     this.destruido = false;
     // Se programa sobre el reloj de la jornada (ms transcurridos que pasa GameScene, ya
     // descontada la pausa) y no sobre `loop.delta`, que Phaser suaviza/acota si el equipo va lento.
     this.transcurrido = 0;
+    this.fraccionDia = 0;
+    this.franja = franjaActual(0);
     this.proximoSpawn = PRIMER_SPAWN_MS;
     this.proximoSpawnEn = PRIMER_SPAWN_MS;
 
@@ -52,6 +67,9 @@ export class OutbreakManager {
 
   /** Suscribe un único callback simple (alcanza para que GameScene reaccione). */
   onChange(cb) { this.onChangeCb = cb; }
+
+  /** Se dispara con la nueva franja (objeto de `FRANJAS_DIA`) cada vez que cambia, nunca en la primera. */
+  onFranjaChange(cb) { this.onFranjaCb = cb; }
 
   randomSpawnDelay() {
     return Phaser.Math.Between(SPAWN_MIN_MS, SPAWN_MAX_MS);
@@ -64,6 +82,14 @@ export class OutbreakManager {
   update(transcurridoMs) {
     if (this.destruido) return;
     this.transcurrido = transcurridoMs;
+    if (this.jornadaMs > 0) {
+      this.fraccionDia = Phaser.Math.Clamp(transcurridoMs / this.jornadaMs, 0, 1);
+      const franja = franjaActual(this.fraccionDia);
+      if (franja.id !== this.franja.id) {
+        this.franja = franja;
+        this.onFranjaCb?.(franja);
+      }
+    }
     if (transcurridoMs < this.proximoSpawnEn) return;
     this.proximoSpawn = this.randomSpawnDelay();
     this.proximoSpawnEn = transcurridoMs + this.proximoSpawn;
@@ -108,7 +134,8 @@ export class OutbreakManager {
   /** Crea un brote (en `pos` o en un punto elegido) y avisa por onChange. */
   spawn(pos) {
     const { x, y } = pos || this.elegirPosicion();
-    const brote = new Brote(this.scene, x, y);
+    const especieId = especieSegunHorario(this.fraccionDia).id;
+    const brote = new Brote(this.scene, x, y, { especieId });
     brote.on('crecio', () => this.onChangeCb?.(this.activos));
     brote.on('fumigado', () => this.quitar(brote));
     this.activos.push(brote);

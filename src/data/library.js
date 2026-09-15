@@ -3,7 +3,7 @@
  * Todos los textos son { es, en } (leer con tx()/txList() de src/i18n).
  *
  * Tipos de tarjeta:
- *  - 'especie'  : ficha de mosquito (viene de SPECIES): ilustración, reconocer, transmite, cría, horario, dato.
+ *  - 'especie'  : ficha de mosquito (viene de SPECIES): foto real (o ilustración si falta), reconocer, transmite, cría, horario, dato.
  *  - 'ciclo'    : etapa del ciclo de vida (icono 'ciclo_huevo'... 'ciclo_adulto'), duración y dónde cortar.
  *  - 'info'     : título + texto + chips (síntomas, prevención).
  *  - 'mito'     : frente "MITO" (rojo) y dorso "VERDAD" (verde): se voltea.
@@ -16,6 +16,7 @@ const especieCard = (s) => ({
   id: `esp_${s.id}`,
   tipo: 'especie',
   icono: s.sprite,
+  fotos: s.fotos,
   color: s.color,
   titulo: s.nombre,
   subtitulo: s.apodo,

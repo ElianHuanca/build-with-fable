@@ -22,6 +22,21 @@ export const TIPS = {
     '¡Ahí aparece un brote! Acércate y mantén presionado el botón de acción para fumigarlo antes de que crezca.',
     'Los brotes crecen con el tiempo: cuanto antes los fumigues, menos sube el riesgo de epidemia.',
   ],
+  horario_manana: [
+    'Es de mañana temprano: el Aedes aegypti pica más a esta hora. Revisa llantas, tanques y baldes.',
+  ],
+  horario_mediodia: [
+    'A pleno sol, el Aedes albopictus (mosquito tigre) sigue activo: le gustan las zonas con vegetación.',
+  ],
+  horario_tarde: [
+    'Está atardeciendo: vuelve el horario favorito del Aedes aegypti y del mosquito tigre.',
+  ],
+  horario_noche: [
+    'De noche aparece más el Culex: no transmite dengue, pero avisa que hay agua estancada cerca.',
+  ],
+  horario_madrugada: [
+    'De madrugada es el turno del Anopheles: se posa con el cuerpo inclinado, "de cabeza".',
+  ],
 };
 
 export const TIPS_EN = {
@@ -39,6 +54,21 @@ export const TIPS_EN = {
   brote: [
     'An outbreak is starting there! Get close and hold the action button to spray it before it grows.',
     'Outbreaks grow over time: the sooner you spray them, the less the epidemic risk rises.',
+  ],
+  horario_manana: [
+    "It's early morning: Aedes aegypti bites more at this hour. Check tires, tanks and buckets.",
+  ],
+  horario_mediodia: [
+    'Under the midday sun, the Asian tiger mosquito (Aedes albopictus) is still active: it likes vegetated areas.',
+  ],
+  horario_tarde: [
+    "It's dusk: the favorite hour of Aedes aegypti and the tiger mosquito is back.",
+  ],
+  horario_noche: [
+    'At night, Culex shows up more: it does not transmit dengue, but it signals stagnant water nearby.',
+  ],
+  horario_madrugada: [
+    "It's Anopheles' turn at dawn: it rests with its body tilted, \"head down\".",
   ],
 };
 

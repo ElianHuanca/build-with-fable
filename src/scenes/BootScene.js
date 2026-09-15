@@ -21,6 +21,11 @@ const SPRITES_V2 = [
   'mosquito_pequeno', 'mosquito_medio', 'mosquito_grande', 'spray',
 ];
 
+// Vecinos NPC (plan v4 §2): cantidad de variantes generadas por tools/gen-assets.mjs (5 hombres
+// + 2 mujeres + 2 niños/as; debe coincidir con `buildVecinos` y con `VARIANTES_SPRITE` en
+// Vecinos.js).
+const VECINOS_VARIANTES = 9;
+
 // Audio (keys documentadas en systems/AudioManager.js). Los genera tools/gen-sfx.mjs.
 const SFX_FILES = ['step', 'detect', 'gluglu', 'pop', 'points', 'win', 'click', 'alert', 'spray', 'motor', 'buzz'];
 
@@ -57,12 +62,32 @@ export class BootScene extends Phaser.Scene {
     }
     for (const k of ['drop', 'spark', 'noise']) this.load.image(k, BASE + `sprites/${k}.png`);
     for (const k of SPRITES_V2) this.load.image(k, BASE + `sprites/${k}.png`);
+    // Hospital (plan v4 §6).
+    this.load.image('hospital', BASE + 'sprites/hospital.png');
+    // Vecinos NPC decorativos (plan v4 §2): N variantes × 2 direcciones (de frente/de
+    // espaldas) × 4 cuadros, mismo esquema de animación que el personaje (ver create() abajo).
+    for (let n = 1; n <= VECINOS_VARIANTES; n++) {
+      for (const dir of ['down', 'up']) {
+        for (let f = 0; f <= 3; f++) this.load.image(`vecino_${n}_${dir}_${f}`, BASE + `sprites/vecino_${n}_${dir}_${f}.png`);
+      }
+    }
+    // Basura callejera (plan v4 §2): 3 tipos × 3 estados. Si faltara alguna, Basura.js cae a un
+    // dibujo generado en tiempo de ejecución (mismo patrón de fallback que Criadero/Brote).
+    for (const tipo of ['bolsa', 'botella', 'llanta']) {
+      for (const estado of ['fresca', 'acumulada', 'criadero']) {
+        const k = `basura_${tipo}_${estado}`;
+        this.load.image(k, BASE + `sprites/${k}.png`);
+      }
+    }
 
     for (const k of UI_KEYS) this.load.image(k, BASE + `ui/${k}.png`);
     // v3: especies (biblioteca y cámara IA), rociador y niebla (fumigación), ciclo de vida,
     // insignias, íconos y pestañas. Los genera tools/gen-assets.mjs (buildV3).
     for (const id of ['aegypti', 'albopictus', 'culex', 'anopheles']) {
       for (const k of [`mosq_${id}`, `mosq_${id}_mini`]) this.load.image(k, BASE + `sprites/${k}.png`);
+      // Fotos reales (dominio público o CC, ver ATTRIBUTION.md), 2 ángulos por especie, para
+      // la ficha de la Biblioteca SEDES.
+      for (const k of [`mosq_${id}_foto`, `mosq_${id}_foto2`]) this.load.image(k, BASE + `fotos/${k}.jpg`);
     }
     for (const k of ['rociador', 'niebla']) this.load.image(k, BASE + `sprites/${k}.png`);
     for (const k of ['ciclo_huevo', 'ciclo_larva', 'ciclo_pupa', 'ciclo_adulto',
@@ -90,6 +115,20 @@ export class BootScene extends Phaser.Scene {
         repeat: -1,
       });
       this.anims.create({ key: `idle_${dir}`, frames: [{ key: 'player', frame: `${dir}_0` }] });
+    }
+    // Animaciones de los vecinos (plan v4 §2): mismo esquema que el jugador, pero cada variante
+    // es una textura distinta (no un atlas con frames nombrados), así que cada cuadro es su
+    // propia key `vecino_<n>_<dir>_<i>` — Phaser también acepta eso en `frames`.
+    for (let n = 1; n <= VECINOS_VARIANTES; n++) {
+      for (const dir of ['down', 'up']) {
+        this.anims.create({
+          key: `vecino_${n}_walk_${dir}`,
+          frames: [1, 2, 3, 2].map((i) => ({ key: `vecino_${n}_${dir}_${i}` })),
+          frameRate: 8,
+          repeat: -1,
+        });
+        this.anims.create({ key: `vecino_${n}_idle_${dir}`, frames: [{ key: `vecino_${n}_${dir}_0` }] });
+      }
     }
     AudioManager.init(this);
     this.scene.start('Menu');

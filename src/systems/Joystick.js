@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { PALETTE, hex } from '../data/palette.js';
+import { Layout } from './Layout.js';
 
 const RADIUS = 48;
 /** Fracción de la altura por debajo de la cual se acepta el toque (deja libre el HUD de misiones). */
@@ -74,8 +75,15 @@ export class Joystick {
     scene.input.on('pointerupoutside', release);
   }
 
+  /**
+   * Posiciona y reescala la base con `Layout.ui()` (mismo factor que TouchControls): en teléfonos
+   * angostos (ancho < 432, la mayoría) cae al piso 0.8, así que el joystick ocupa menos espacio y
+   * deja margen frente a LUPA/VEHÍCULO en vez de chocar con ellos en pantallas de 360-390 px.
+   */
   colocarBase(w, h) {
-    this.base.setPosition(FIJO_POS.x, h - FIJO_POS.y);
+    this.f = Layout.ui(this.scene);
+    this.base.setPosition(FIJO_POS.x * this.f, h - FIJO_POS.y * this.f).setScale(this.f);
+    this.knob.setScale(this.f);
     if (!this.pointer) this.knob.setPosition(this.base.x, this.base.y);
   }
 
@@ -84,19 +92,21 @@ export class Joystick {
     return p.x <= scene.scale.width / 2 && p.y >= scene.scale.height * ZONE_TOP;
   }
 
-  /** Modo fijo: a ≤ 90 px de la base o en la zona inferior izquierda. */
+  /** Modo fijo: a ≤ 90 px (escalados) de la base o en la zona inferior izquierda. */
   inZoneFijo(p) {
     const { width, height } = this.scene.scale;
-    if (Phaser.Math.Distance.Between(p.x, p.y, this.base.x, this.base.y) <= FIJO_RADIO_ACTIVACION) return true;
+    const radioActivacion = FIJO_RADIO_ACTIVACION * (this.f || 1);
+    if (Phaser.Math.Distance.Between(p.x, p.y, this.base.x, this.base.y) <= radioActivacion) return true;
     return p.x < width * FIJO_ZONE_X && p.y > height * FIJO_ZONE_Y;
   }
 
   update() {
     if (!this.pointer) return this.vector;
+    const radio = RADIUS * (this.f || 1);
     const d = new Phaser.Math.Vector2(this.pointer.x - this.origin.x, this.pointer.y - this.origin.y);
-    if (d.length() > RADIUS) d.setLength(RADIUS);
+    if (d.length() > radio) d.setLength(radio);
     this.knob.setPosition(this.base.x + d.x, this.base.y + d.y);
-    this.vector.set(d.x / RADIUS, d.y / RADIUS);
+    this.vector.set(d.x / radio, d.y / radio);
     // Zona muerta pequeña
     if (this.vector.length() < 0.15) this.vector.set(0, 0);
     return this.vector;

@@ -2,14 +2,17 @@ import Phaser from 'phaser';
 import { Player } from '../objects/Player.js';
 import { Criadero } from '../objects/Criadero.js';
 import { Estacion } from '../objects/Estacion.js';
+import { Hospital } from '../objects/Hospital.js';
 import { Vehiculo } from '../objects/Vehiculo.js';
+import { Basura } from '../objects/Basura.js';
 import { Joystick } from '../systems/Joystick.js';
 import { InteractionPrompt } from '../systems/InteractionPrompt.js';
 import { TouchControls, PauseMenu } from '../systems/TouchControls.js';
 import { buildLevel, zoneAt, OBJECT_DEFS } from '../systems/LevelLoader.js';
 import { ScoreManager } from '../systems/ScoreManager.js';
 import { MissionManager } from '../systems/MissionManager.js';
-import { OutbreakManager } from '../systems/OutbreakManager.js';
+import { OutbreakManager, MAX_ACTIVOS as MAX_BROTES_ACTIVOS } from '../systems/OutbreakManager.js';
+import { Vecinos } from '../systems/Vecinos.js';
 import { EpidemicMeter } from '../systems/EpidemicMeter.js';
 import { Minimap } from '../systems/Minimap.js';
 import { Compass } from '../systems/Compass.js';
@@ -51,12 +54,23 @@ const ALPHA_MINIMAPA_EVITAR = 0.35;
 const JORNADA_SEG = 240;
 /** Radio de detección de un brote activo (análogo a Criadero.RADIO_DETECCION). */
 const RADIO_DETECCION_BROTE = 90;
+/** Radio de detección de basura recogible (plan v4 §2): más chico que un brote, es un gesto rápido. */
+const RADIO_DETECCION_BASURA = 70;
+/** Puntos por recoger basura a tiempo (fresca/acumulada) o tarde (ya en 'criadero'). */
+const PUNTOS_BASURA = 20;
+const PUNTOS_BASURA_TARDE = 10;
+/** Vecinos NPC decorativos (plan v4 §2) y tope de basura simultánea en el mapa (rendimiento). */
+const CANTIDAD_VECINOS = 4;
+const MAX_BASURAS = 12;
 /** Umbral (0..100) del medidor de epidemia a partir del cual ya no se puede sacar 2/3 estrellas. */
 const UMBRAL_RIESGO = 60;
 /** Puntos por fumigar un brote, según su nivel (mockup sección 1.3/1.6). */
 const PUNTOS_BROTE = { pequeno: 75, medio: 90, grande: 100 };
 /** Dónde nace la camioneta si el nivel no trae `garaje`: junto a la estación, sobre la calle. */
 const GARAJE_OFFSET = { x: 96, y: 56 };
+/** Dónde nace el hospital (plan v4 §6, groundwork): offset fijo desde la estación, sin superponerse
+ * con ella ni con la camioneta (GARAJE_OFFSET). */
+const HOSPITAL_OFFSET = { x: -110, y: 40 };
 /** Velocidad mínima (px/s) para que suene el motor de la camioneta. */
 const MOTOR_MIN_SPEED = 5;
 
@@ -127,6 +141,9 @@ export class GameScene extends Phaser.Scene {
     // La camioneta se estaciona al lado del edificio (no encima: el edificio la taparía).
     const puntoGaraje = data.garaje || { x: puntoEstacion.x + GARAJE_OFFSET.x, y: puntoEstacion.y + GARAJE_OFFSET.y };
     this.vehiculo = new Vehiculo(this, puntoGaraje.x, puntoGaraje.y);
+    // Hospital (plan v4 §6, groundwork): edificio fijo cerca de la estación, con noción simple de
+    // capacidad/saturación (ver Hospital.actualizar en update()).
+    this.hospital = new Hospital(this, puntoEstacion.x + HOSPITAL_OFFSET.x, puntoEstacion.y + HOSPITAL_OFFSET.y);
     this.enVehiculo = false;
     this.motorOn = false;
     this.fumigando = null;   // brote que se está fumigando (mantener E)
@@ -141,8 +158,8 @@ export class GameScene extends Phaser.Scene {
     this.pausa = new PauseMenu(this, { onSalir: () => this.salirAlMenu() });
     this.touch = this.tactil
       ? new TouchControls(this, {
-        // Toque corto: solo criaderos (un brote soltado antes de tiempo queda cancelado, no se relanza).
-        onAccion: () => { if (this.activo) this.intentarLimpiar(); },
+        // Toque corto: criaderos y basura (un brote soltado antes de tiempo queda cancelado, no se relanza).
+        onAccion: () => { if (this.activo || this.basuraActiva) this.intentarLimpiar(); },
         onAccionInicio: () => this.accionInicio(),
         onAccionFin: () => this.accionFin(),
         onPausa: () => this.togglePausa(),
@@ -170,7 +187,11 @@ export class GameScene extends Phaser.Scene {
       criaderos: this.criaderos,
       bounds: { x: 0, y: 0, w: level.widthPx, h: level.heightPx },
       solidos: (data.objects || []).filter((o) => OBJECT_DEFS[o.type]?.solid),
+      jornadaMs: JORNADA_SEG * 1000,
     });
+    // Ciclo día/noche (v4): aviso corto al cambiar de franja horaria, con el tip que explica
+    // qué especie es más probable ahora (mismo mecanismo que mostrarTip, categoría 'horario_<id>').
+    this.outbreakManager.onFranjaChange((franja) => this.mostrarTip(`horario_${franja.id}`, 4500));
     this.brotesConocidos = new WeakSet();
     this.brotesVistos = false;
     this.outbreakManager.onChange((activos) => {
@@ -183,6 +204,22 @@ export class GameScene extends Phaser.Scene {
     });
     this.epidemicMeter = new EpidemicMeter();
     this.superoUmbral = false;
+
+    // Mundo vivo (plan v4 §2): vecinos que caminan cerca de las casas y de vez en cuando botan
+    // basura; la basura madura sola (Basura.js) hasta convertirse en un brote real si nadie la
+    // recoge a tiempo. `vecinoBotoBasura`/`recogerBasura` conectan ambas piezas (que no se
+    // conocen entre sí a propósito, ver JSDoc de Vecinos.js).
+    const puntosVecinos = (data.objects || [])
+      .filter((o) => o.type === 'casa_a' || o.type === 'casa_b')
+      .map((o) => ({ x: o.x, y: o.y + 70 })); // +70: aprox. la vereda frente a la casa, no la puerta
+    this.vecinos = new Vecinos(this, {
+      puntos: puntosVecinos,
+      bounds: { x: 0, y: 0, w: level.widthPx, h: level.heightPx },
+      cantidad: CANTIDAD_VECINOS,
+      onBotar: (x, y) => this.vecinoBotoBasura(x, y),
+    });
+    this.basuras = [];
+    this.basuraActiva = null;
 
     // Minimapa y brújula
     this.minimap = new Minimap(this, {
@@ -290,6 +327,8 @@ export class GameScene extends Phaser.Scene {
       this.touch?.destroy();
       this.pausa?.destroy();
       this.outbreakManager?.destroy?.();
+      this.vecinos?.destroy?.();
+      this.basuras?.forEach((b) => b.destroy());
       this.minimap?.destroy?.();
       this.compass?.destroy?.();
       this.alertToast?.destroy?.();
@@ -329,12 +368,14 @@ export class GameScene extends Phaser.Scene {
 
     // Brotes y medidor de epidemia
     this.outbreakManager.update(this.time.now - this.tiempoInicio);
+    this.vecinos.update(this.game.loop.delta);
     this.epidemicMeter.tick(this.game.loop.delta, {
       brotesActivos: this.outbreakManager.activos,
       criaderosSucios: Math.max(0, this.total - this.limpios),
     });
     // Solo se publica al cambiar el entero: escribirlo cada frame reinicia el tween de la barra del
     // HUD (450 ms) antes de que avance y la barra se queda visualmente en 0 %.
+    this.hospital.actualizar(this.epidemicMeter.valor);
     const epidemiaEntera = Math.round(this.epidemicMeter.valor);
     if (epidemiaEntera !== this.registry.get('epidemia')) this.registry.set('epidemia', epidemiaEntera);
     if (this.epidemicMeter.valor >= UMBRAL_RIESGO && !this.superoUmbral) {
@@ -351,7 +392,7 @@ export class GameScene extends Phaser.Scene {
     this.compass.update(this.broteMasCercano());
 
     this.touch?.update({
-      activo: this.activo || this.broteActivo || this.estacionActiva, limpiando: this.limpiando,
+      activo: this.activo || this.broteActivo || this.basuraActiva || this.estacionActiva, limpiando: this.limpiando,
       progreso: this.fumigando ? this.fumigando.progresoFumigacion : 0,
     });
 
@@ -387,6 +428,7 @@ export class GameScene extends Phaser.Scene {
         agregar(b.x, b.y, (b.width || 80) + 16, (b.height || 80) + 16);
       }
       if (this.activo) agregar(this.activo.x, this.activo.y, 72, 72);
+      if (this.basuraActiva) agregar(this.basuraActiva.x, this.basuraActiva.y, 56, 56);
     }
     hud?.evitar?.(rects);
 
@@ -407,7 +449,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Cartel y banner en el lado opuesto al objetivo (mitad superior → abajo, y viceversa).
-    const objetivo = this.activo || this.broteActivo || (this.estacionActiva ? this.estacion : null);
+    const objetivo = this.activo || this.broteActivo || this.basuraActiva || (this.estacionActiva ? this.estacion : null);
     let ladoCartel = 'arriba', ladoDato = 'abajo';
     if (objetivo) {
       const p = worldToScreen(this, objetivo.x, objetivo.y);
@@ -497,6 +539,7 @@ export class GameScene extends Phaser.Scene {
       brote,
       especieId: brote?.especieId || null,
       snapshotKey: this.textures.exists(CAM_SNAP) ? CAM_SNAP : null,
+      fraccionDia: this.outbreakManager.fraccionDia,
     });
   }
 
@@ -607,21 +650,33 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
+    // Basura recogible (plan v4 §2): prioridad menor que criadero/brote, mayor que la estación.
+    let nearestBs = null;
+    if (!nearestC && !nearestB) {
+      let bestBs = RADIO_DETECCION_BASURA;
+      for (const bs of this.basuras) {
+        if (bs.state === 'recogida' || bs.recogiendo) continue;
+        const d = Phaser.Math.Distance.Between(x, y, bs.x, bs.y);
+        if (d <= bestBs) { bestBs = d; nearestBs = bs; }
+      }
+    }
+
     if (nearestC !== this.activo) {
       if (this.activo) this.activo.setDetected(false);
       this.activo = nearestC;
       if (nearestC) nearestC.setDetected(true);
     }
     this.broteActivo = nearestB;
-    // Sin criadero ni brote a mano y a pie en la estación: la acción abre la Biblioteca.
-    this.estacionActiva = !nearestC && !nearestB && !this.enVehiculo && this.estacion.cerca(this.player);
+    this.basuraActiva = nearestBs;
+    // Sin criadero, brote ni basura a mano y a pie en la estación: la acción abre la Biblioteca.
+    this.estacionActiva = !nearestC && !nearestB && !nearestBs && !this.enVehiculo && this.estacion.cerca(this.player);
 
-    const objetivo = this.activo || this.broteActivo || (this.estacionActiva ? this.estacion : null);
+    const objetivo = this.activo || this.broteActivo || this.basuraActiva || (this.estacionActiva ? this.estacion : null);
     if (objetivo === this._objetivoPrompt) return;
     this._objetivoPrompt = objetivo;
     if (objetivo) {
       if (objetivo !== this.estacion) this.events.emit('sfx', 'detect');
-      this.prompt.setModo(this.activo ? 'criadero' : this.broteActivo ? 'brote' : 'estacion');
+      this.prompt.setModo(this.activo ? 'criadero' : this.broteActivo ? 'brote' : this.basuraActiva ? 'basura' : 'estacion');
       this.prompt.show();
       this.prompt.showLabelAt(objetivo.x, objetivo.y - (objetivo === this.estacion ? 72 : 40));
     } else {
@@ -678,6 +733,45 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
+   * Un vecino botó basura en (x,y) (`Vecinos.onBotar`): crea la `Basura` y conecta sus eventos.
+   * 'recogida': el jugador la limpió a tiempo o tarde (`recogerBasura`) → puntos y la saca de la
+   * lista. 'maduro': nadie la recogió y ya es un criadero real → nace un brote ahí mismo (mismo
+   * mecanismo que usa `OutbreakManager` para los demás brotes, incluida la especie según la
+   * franja horaria vigente) y la basura se destruye (el enjambre la reemplaza visualmente) —
+   * **solo si no se llegó a `MAX_BROTES_ACTIVOS`**: a diferencia del `spawn()` automático de
+   * `OutbreakManager.update()` (que sí respeta ese tope), llamar `spawn()` directamente desde
+   * acá lo saltaba, así que con varios vecinos botando basura seguido podían acumularse muchos
+   * más de 3 brotes a la vez (cada uno con hasta 22 mosquitos) — eso fue el motivo real de que
+   * el juego se sintiera con parpadeos y llegara a colgarse (2026-09-15, reporte del usuario).
+   * Si ya está al tope, la basura madura se destruye igual (sin generar un brote nuevo) en vez
+   * de acumularse: sigue siendo basura sin recoger, pero no agrega más carga a la escena.
+   */
+  vecinoBotoBasura(x, y) {
+    if (this.terminado || this.basuras.length >= MAX_BASURAS) return;
+    const b = new Basura(this, x, y);
+    b.on('recogida', (_b, { tarde }) => {
+      this.basuras = this.basuras.filter((k) => k !== b);
+      if (this.basuraActiva === b) this.basuraActiva = null;
+      const puntos = tarde ? PUNTOS_BASURA_TARDE : PUNTOS_BASURA;
+      this.sumarPuntos(puntos);
+      this.textoFlotante(b.x, b.y - 20, t('game.mas', { n: puntos }), PALETTE.amarillo);
+    });
+    b.on('maduro', () => {
+      this.basuras = this.basuras.filter((k) => k !== b);
+      if (this.basuraActiva === b) this.basuraActiva = null;
+      if (this.outbreakManager.activos.length < MAX_BROTES_ACTIVOS) this.outbreakManager.spawn({ x: b.x, y: b.y });
+      b.destroy();
+    });
+    this.basuras.push(b);
+  }
+
+  /** Recoger basura (cartel/botón/tecla): sin animación de bloqueo, es un gesto rápido. */
+  recogerBasura(b) {
+    if (!b || this.terminado || this.pausa.abierta) return;
+    b.recoger();
+  }
+
+  /**
    * Botón "Eliminar agua" / "Fumigar" del cartel (ratón): el criadero cercano tiene prioridad
    * sobre el brote; con un clic la fumigación corre sola hasta el final (no hay "mantener").
    * El botón ACCIÓN táctil pasa por accionInicio/accionFin (mantener) y solo llega aquí con un
@@ -686,6 +780,7 @@ export class GameScene extends Phaser.Scene {
   intentarLimpiar() {
     if (this.activo) return this.limpiarCriadero(this.activo);
     if (this.broteActivo) return this.fumigarBrote(this.broteActivo, { mantener: false });
+    if (this.basuraActiva) return this.recogerBasura(this.basuraActiva);
     if (this.estacionActiva) return this.abrirBiblioteca();
   }
 
@@ -696,6 +791,7 @@ export class GameScene extends Phaser.Scene {
   accionInicio() {
     if (this.activo) return this.limpiarCriadero(this.activo);
     if (this.broteActivo) return this.fumigarBrote(this.broteActivo, { mantener: true });
+    if (this.basuraActiva) return this.recogerBasura(this.basuraActiva);
     if (this.estacionActiva) return this.abrirBiblioteca();
   }
 

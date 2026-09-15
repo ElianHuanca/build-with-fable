@@ -272,17 +272,25 @@ export class TouchControls {
   /** Geometría vigente según orientación (Layout.isPortrait). */
   geometria() { return Layout.isPortrait(this.scene) ? BTN.vertical : BTN.horizontal; }
 
+  /**
+   * Reposiciona y reescala todo el cluster (offsets, radios y áreas táctiles) con `Layout.ui()`:
+   * en teléfonos angostos (ancho < 432, la mayoría) el factor cae al piso 0.8, así que LUPA y
+   * VEHÍCULO se acercan a ACCIÓN en vez de quedar a un pixelaje fijo que sí choca con el joystick
+   * fijo de abajo-izquierda en pantallas de 360-390 px. Ver Joystick.js para el mismo factor.
+   */
   reposicionar() {
     const scene = this.scene;
     const g = this.geometria();
+    const f = Layout.ui(scene);
+    this.f = f;
     for (const k of Object.keys(g)) {
       const { ancla, dx, dy } = g[k];
-      const { x, y } = Layout.anchor(scene, ancla, dx, dy);
-      this[k].setPosition(Math.round(x), Math.round(y));
+      const { x, y } = Layout.anchor(scene, ancla, dx * f, dy * f);
+      this[k].setPosition(Math.round(x), Math.round(y)).setScale(f);
     }
-    this.anillo.setPosition(this.accion.x, this.accion.y);
-    const p = Layout.anchor(scene, PAUSA.ancla, PAUSA.dx, PAUSA.dy);
-    this.pausa.setPosition(Math.round(p.x), Math.round(p.y));
+    this.anillo.setPosition(this.accion.x, this.accion.y).setScale(f);
+    const p = Layout.anchor(scene, PAUSA.ancla, PAUSA.dx * f, PAUSA.dy * f);
+    this.pausa.setPosition(Math.round(p.x), Math.round(p.y)).setScale(f);
     this.energiaDibujada = -1;
     this.progresoDibujado = -1;
   }
@@ -294,7 +302,7 @@ export class TouchControls {
     this.progresoDibujado = p;
     const g = this.progresoArco.clear();
     if (p <= 0) return;
-    const r = R.accion + 7, x = this.accion.x, y = this.accion.y;
+    const r = (R.accion + 7) * (this.f || 1), x = this.accion.x, y = this.accion.y;
     g.lineStyle(6, hex(PALETTE.linea), 0.5).strokeCircle(x, y, r);
     const inicio = -Math.PI / 2;
     g.lineStyle(6, hex(PALETTE.verde), 1).beginPath();
@@ -386,7 +394,7 @@ export class TouchControls {
     if (Math.abs(v - this.energiaDibujada) < 0.01) return;
     this.energiaDibujada = v;
     const g = this.energiaArco.clear();
-    const r = R.correr + 6, x = this.correr.x, y = this.correr.y;
+    const r = (R.correr + 6) * (this.f || 1), x = this.correr.x, y = this.correr.y;
     g.lineStyle(5, hex(PALETTE.linea), 0.5).strokeCircle(x, y, r);
     if (v <= 0) return;
     const inicio = -Math.PI / 2;

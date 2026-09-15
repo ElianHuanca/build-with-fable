@@ -37,6 +37,8 @@ export class LibraryScene extends Phaser.Scene {
     this.drag = null;
     this.card = null;
     this.mitoLado = 'mito';
+    /** Foto activa por tarjeta de especie (índice en `carta.fotos`), para el selector de ángulos. */
+    this.fotoIdx = {};
   }
 
   get tab() { return LIBRARY_TABS[this.tabIdx]; }
@@ -633,8 +635,68 @@ export class LibraryScene extends Phaser.Scene {
 
   // ───────────────────────────── ilustraciones ─────────────────────────────
 
+  /**
+   * Ficha de especie con 1-2 fotos reales (ángulos distintos, ver `species.js` → `fotos`):
+   * imagen + rótulo del ángulo + flechas para alternar si hay más de una (persiste en
+   * `this.fotoIdx` por id de tarjeta). Si la textura no cargó, cae al dibujo de `dibujarMosquito`.
+   */
+  ilustracionEspecie(carta, w, h) {
+    const fotos = carta.fotos;
+    const idx = Phaser.Math.Wrap(this.fotoIdx[carta.id] || 0, 0, fotos.length);
+    this.fotoIdx[carta.id] = idx;
+    const foto = fotos[idx];
+    const c = this.add.container(0, 0);
+    const labelH = 24;
+    const imgH = h - labelH;
+    if (foto.key && this.textures.exists(foto.key)) {
+      const img = this.add.image(0, -labelH / 2, foto.key);
+      img.setScale(Math.min((w * 0.82) / img.width, (imgH * 0.94) / img.height));
+      c.add(img);
+    } else {
+      const g = this.add.graphics();
+      c.add(g);
+      const s = Math.min(w / 220, imgH / 120);
+      const id = carta.id.replace('esp_', '');
+      this.dibujarMosquito(g, hex(carta.color || PALETTE.marino), {
+        rayas: id === 'aegypti' || id === 'albopictus', lira: id === 'aegypti', linea: id === 'albopictus',
+        inclinado: id === 'anopheles', manchas: id === 'anopheles',
+      }, s * 1.1, 0, -labelH / 2);
+    }
+    const labelY = h / 2 - labelH / 2 + 3;
+    c.add(this.add.text(0, labelY, tx(foto.angulo), {
+      fontFamily: FONT, fontSize: 12, fontStyle: 'bold', color: PALETTE.marino,
+    }).setOrigin(0.5));
+    if (fotos.length > 1) {
+      const bx = Math.min(w / 2 - 16, 76);
+      c.add(makeButton(this, {
+        x: -bx, y: labelY, w: 26, h: 26, label: '◀', fontSize: 13, radius: 8,
+        color: PALETTE.azulGorra, colorHover: PALETTE.azulGorraOscuro,
+        onClick: () => this.cambiarFoto(carta.id, -1, fotos.length),
+      }));
+      c.add(makeButton(this, {
+        x: bx, y: labelY, w: 26, h: 26, label: '▶', fontSize: 13, radius: 8,
+        color: PALETTE.azulGorra, colorHover: PALETTE.azulGorraOscuro,
+        onClick: () => this.cambiarFoto(carta.id, 1, fotos.length),
+      }));
+      const dotsY = labelY - 18, dotsW = (fotos.length - 1) * 10;
+      for (let i = 0; i < fotos.length; i++) {
+        c.add(this.add.circle(-dotsW / 2 + i * 10, dotsY, 3, hex(i === idx ? PALETTE.azulGorra : PALETTE.grisClaro), 1));
+      }
+    }
+    return c;
+  }
+
+  /** Cambia la foto activa de una ficha de especie (dir ±1, envuelve) y redibuja la tarjeta. */
+  cambiarFoto(id, dir, total) {
+    if (this.busy) return;
+    sfx(this, 'click');
+    this.fotoIdx[id] = Phaser.Math.Wrap((this.fotoIdx[id] || 0) + dir, 0, total);
+    this.mostrarCarta(0);
+  }
+
   /** Imagen de la textura si existe; si no, un dibujo según `icono`. Ajustada a w×h. */
   ilustracion(carta, w, h) {
+    if (carta.tipo === 'especie' && carta.fotos?.length) return this.ilustracionEspecie(carta, w, h);
     const key = carta.icono;
     if (key && this.textures.exists(key)) {
       const img = this.add.image(0, 0, key);

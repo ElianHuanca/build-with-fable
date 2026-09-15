@@ -351,47 +351,76 @@ async function buildDeco() {
 }
 
 // ---------- Camioneta de fumigación (top-down, 4 direcciones, 80×56) ----------
+// Camioneta blanca con tanque de fumigación celeste/gris bien visible en la caja de
+// carga (nada de cruz roja: ese ícono se lee como ambulancia). El tanque lleva el mismo
+// lenguaje visual que `rociador`/`niebla` (boquilla + gotas celestes). down/up usan
+// proporciones bien distintas entre cabina y caja para que se lean como vistas opuestas;
+// left/right son perfiles reales (parabrisas inclinado + tanque cilíndrico con boquilla),
+// y `right` es simplemente `left` espejado en X, igual que hace `characterSVG`.
 function vehiculoSVG(dir) {
   const w = 80, h = 56;
-  const body = P.blanco, tank = P.grisClaro, tankDark = P.gris;
-  const g = [];
+  const body = P.blanco, tank = P.celeste, tankDark = P.gris, tankCap = P.grisClaro;
   const wheel = (x, y, horiz) => horiz
     ? `<rect x="${x}" y="${y}" width="10" height="5" rx="1.5" fill="#2a2e32"/>`
     : `<rect x="${x}" y="${y}" width="5" height="10" rx="1.5" fill="#2a2e32"/>`;
-  const badge = (cx, cy) =>
-    `<circle cx="${cx}" cy="${cy}" r="6" fill="${P.blanco}" ${O}/>` +
-    `<path d="M${cx - 3} ${cy} h6 M${cx} ${cy - 3} v6" stroke="#e53935" stroke-width="2" stroke-linecap="round"/>`;
-  g.push(`<ellipse cx="${w / 2}" cy="${h - 4}" rx="${w / 2 - 4}" ry="5" fill="rgba(0,0,0,0.22)"/>`);
+  // Insignia de fumigación (gota + boquilla), reemplaza la antigua cruz de ambulancia.
+  const drop = (cx, cy, r = 4.2) =>
+    `<path d="M${cx} ${cy - r} q${r} ${r * 1.3} 0 ${r * 2} q${-r} ${-0.3} 0 ${-r * 2}z" fill="${P.aguaSucia}" stroke="${P.linea}" stroke-width="1"/>` +
+    `<circle cx="${cx}" cy="${cy + r * 0.3}" r="${r * 0.4}" fill="#dff3ff" stroke="none"/>`;
+
   if (dir === 'down' || dir === 'up') {
-    const frontY = dir === 'down' ? h - 12 : 12;
-    const backY = dir === 'down' ? 12 : h - 12;
+    const g = [];
+    g.push(`<ellipse cx="${w / 2}" cy="${h - 4}" rx="${w / 2 - 4}" ry="5" fill="rgba(0,0,0,0.22)"/>`);
     g.push(wheel(4, 14, false), wheel(w - 9, 14, false), wheel(4, h - 24, false), wheel(w - 9, h - 24, false));
     g.push(`<rect x="10" y="6" width="${w - 20}" height="${h - 12}" rx="8" fill="${body}" ${O}/>`);
-    // Tanque de fumigación (extremo trasero)
-    g.push(`<rect x="18" y="${backY - 10}" width="${w - 36}" height="20" rx="7" fill="${tank}" ${O}/>`);
-    g.push(`<rect x="22" y="${backY - 12}" width="${w - 44}" height="4" rx="2" fill="${tankDark}"/>`);
-    // Cabina y parabrisas (extremo delantero)
-    g.push(`<rect x="16" y="${frontY - 10}" width="${w - 32}" height="16" rx="5" fill="${P.celeste}" ${O}/>`);
-    g.push(`<rect x="20" y="${frontY - 7}" width="${w - 40}" height="6" rx="2" fill="#bfeaff" opacity="0.8"/>`);
-    g.push(`<circle cx="20" cy="${dir === 'down' ? h - 5 : 5}" r="2.4" fill="${P.amarillo}"/>`);
-    g.push(`<circle cx="${w - 20}" cy="${dir === 'down' ? h - 5 : 5}" r="2.4" fill="${P.amarillo}"/>`);
-    g.push(badge(w / 2, h / 2));
-  } else {
-    const frontX = dir === 'right' ? w - 12 : 12;
-    const backX = dir === 'right' ? 12 : w - 12;
-    g.push(wheel(14, 3, true), wheel(14, h - 8, true), wheel(w - 24, 3, true), wheel(w - 24, h - 8, true));
-    g.push(`<rect x="6" y="8" width="${w - 12}" height="${h - 16}" rx="8" fill="${body}" ${O}/>`);
-    // Tanque de fumigación (extremo trasero)
-    g.push(`<rect x="${backX - 10}" y="16" width="20" height="${h - 32}" rx="7" fill="${tank}" ${O}/>`);
-    g.push(`<rect x="${backX - 12}" y="20" width="4" height="${h - 40}" rx="2" fill="${tankDark}"/>`);
-    // Cabina y parabrisas (extremo delantero)
-    g.push(`<rect x="${frontX - 8}" y="14" width="16" height="${h - 28}" rx="5" fill="${P.celeste}" ${O}/>`);
-    g.push(`<rect x="${frontX - 5}" y="18" width="6" height="${h - 36}" rx="2" fill="#bfeaff" opacity="0.8"/>`);
-    g.push(`<circle cx="${dir === 'right' ? w - 5 : 5}" cy="18" r="2.4" fill="${P.amarillo}"/>`);
-    g.push(`<circle cx="${dir === 'right' ? w - 5 : 5}" cy="${h - 18}" r="2.4" fill="${P.amarillo}"/>`);
-    g.push(badge(w / 2, h / 2));
+    if (dir === 'down') {
+      // Frente abajo: parabrisas grande ocupa media caja (visto desde arriba hacia el capot).
+      g.push(`<rect x="16" y="8" width="${w - 32}" height="16" rx="6" fill="${tankDark}" ${O}/>`); // techo/capot angosto
+      g.push(`<rect x="14" y="${h - 30}" width="${w - 28}" height="22" rx="6" fill="${P.celeste}" ${O}/>`);
+      g.push(`<rect x="18" y="${h - 27}" width="${w - 36}" height="9" rx="2.5" fill="#bfeaff" opacity="0.85"/>`);
+      g.push(`<path d="M${w / 2} ${h - 18} v6" stroke="${P.linea}" stroke-width="1" opacity="0.6"/>`); // espejo retrovisor
+      g.push(`<circle cx="20" cy="${h - 5}" r="2.4" fill="${P.amarillo}"/>`);
+      g.push(`<circle cx="${w - 20}" cy="${h - 5}" r="2.4" fill="${P.amarillo}"/>`);
+      // Tanque angosto asomando arriba, contra la cabina ancha de abajo.
+      g.push(`<rect x="24" y="9" width="${w - 48}" height="10" rx="4" fill="${tank}" ${O}/>`);
+      g.push(`<rect x="${w / 2 - 3}" y="6" width="6" height="4" rx="1.5" fill="${tankCap}" ${O}/>`);
+      g.push(drop(w / 2, h - 20, 4.6));
+    } else {
+      // Frente arriba: techo sólido angosto (sin vidrio, visto desde atrás) + tanque ancho abajo.
+      g.push(`<rect x="18" y="7" width="${w - 36}" height="13" rx="6" fill="${body}" ${O}/>`);
+      g.push(`<rect x="12" y="9" width="6" height="4" rx="2" fill="${tankDark}"/>`); // espejo izq
+      g.push(`<rect x="${w - 18}" y="9" width="6" height="4" rx="2" fill="${tankDark}"/>`); // espejo der
+      g.push(`<circle cx="20" cy="8" r="2.2" fill="${P.amarillo}"/>`);
+      g.push(`<circle cx="${w - 20}" cy="8" r="2.2" fill="${P.amarillo}"/>`);
+      // Tanque ancho de fumigación ocupando media caja, con tapa y franja.
+      g.push(`<rect x="14" y="${h - 32}" width="${w - 28}" height="24" rx="7" fill="${tank}" ${O}/>`);
+      g.push(`<rect x="18" y="${h - 28}" width="${w - 36}" height="4" rx="2" fill="${tankCap}"/>`);
+      g.push(`<rect x="${w / 2 - 4}" y="${h - 36}" width="8" height="5" rx="2" fill="${tankCap}" ${O}/>`);
+      g.push(drop(w / 2, h - 14, 4.6));
+    }
+    return svg(w, h, g.join(''));
   }
-  return svg(w, h, g.join(''));
+
+  // Perfil lateral (izquierda); `right` reutiliza esta misma geometría espejada en X.
+  const g = [];
+  g.push(`<ellipse cx="${w / 2}" cy="${h - 4}" rx="${w / 2 - 4}" ry="5" fill="rgba(0,0,0,0.22)"/>`);
+  g.push(wheel(14, h - 8, true), wheel(w - 24, h - 8, true));
+  // Cabina adelante (izquierda) con parabrisas inclinado.
+  g.push(`<path d="M8 ${h - 10} L8 24 Q8 16 16 15 L26 15 L34 24 L34 ${h - 10} Z" fill="${body}" ${O}/>`);
+  g.push(`<path d="M17 17 L27 17 L32 24 L18 24 Z" fill="#bfeaff" stroke="${P.linea}" stroke-width="1" opacity="0.9"/>`);
+  g.push(`<circle cx="16" cy="${h - 8}" r="2.2" fill="${P.amarillo}"/>`);
+  // Caja de carga con el tanque cilíndrico de fumigación, bien diferenciado de la cabina.
+  g.push(`<rect x="34" y="18" width="${w - 42}" height="${h - 28}" rx="6" fill="${body}" ${O}/>`);
+  g.push(`<rect x="38" y="21" width="${w - 50}" height="${h - 34}" rx="9" fill="${tank}" ${O}/>`);
+  g.push(`<rect x="38" y="21" width="4" height="${h - 34}" rx="2" fill="${tankDark}" opacity="0.5"/>`); // banda del tanque
+  g.push(`<rect x="${w - 22}" y="21" width="4" height="${h - 34}" rx="2" fill="${tankDark}" opacity="0.5"/>`);
+  g.push(`<rect x="${w - 20}" y="24" width="6" height="5" rx="1.5" fill="${tankCap}" ${O}/>`); // tapa del tanque
+  g.push(`<path d="M${w - 8} ${h - 20} q7 1 8 5" fill="none" stroke="${tankDark}" stroke-width="2.4" stroke-linecap="round"/>`); // boquilla trasera
+  g.push(drop(w - 6, h - 12, 3.4));
+  g.push(`<rect x="30" y="${h - 6}" width="8" height="2.5" rx="1.2" fill="#2a2e32"/>`); // parachoques trasero
+  const body_svg = svg(w, h, g.join(''));
+  if (dir === 'left') return body_svg;
+  return svg(w, h, `<g transform="translate(${w},0) scale(-1,1)">${g.join('')}</g>`);
 }
 
 async function buildVehiculo() {
@@ -436,6 +465,39 @@ function estacionSVG() {
 
 async function buildEstacion() {
   await sharp(Buffer.from(estacionSVG())).png().toFile(`${OUT}/sprites/estacion.png`);
+}
+
+// ---------- Hospital (edificio blanco con cruz de salud, 128×128) ----------
+// Mismo patrón que estacionSVG(), pero blanco + techo celeste + cruz roja, para distinguirse a
+// simple vista de la estación SEDES (naranja/teja). Groundwork del plan v4 §6.
+function hospitalSVG() {
+  const W = 128, H = 128;
+  const g = [];
+  g.push(`<ellipse cx="${W / 2}" cy="${H - 10}" rx="${W / 2 - 10}" ry="7" fill="rgba(0,0,0,0.22)"/>`);
+  // Pared frontal
+  g.push(`<rect x="10" y="56" width="${W - 20}" height="52" rx="4" fill="${P.blanco}" ${O}/>`);
+  g.push(`<rect x="10" y="56" width="${W - 20}" height="6" fill="#e6e9ec" stroke="none"/>`);
+  // Puerta de entrada
+  g.push(`<rect x="${W / 2 - 10}" y="82" width="20" height="26" rx="2" fill="#8b5a2b" ${O}/>`);
+  g.push(`<circle cx="${W / 2 + 6}" cy="95" r="1.5" fill="${P.amarillo}" stroke="none"/>`);
+  // Ventanas
+  g.push(`<rect x="20" y="70" width="18" height="16" rx="2" fill="${P.celeste}" ${O}/>`);
+  g.push(`<path d="M29 70 v16 M20 78 h18" stroke="${P.linea}" stroke-width="1.2"/>`);
+  g.push(`<rect x="${W - 38}" y="70" width="18" height="16" rx="2" fill="${P.celeste}" ${O}/>`);
+  g.push(`<path d="M${W - 29} 70 v16 M${W - 38} 78 h18" stroke="${P.linea}" stroke-width="1.2"/>`);
+  // Techo plano celeste (distinto del techo a dos aguas naranja de la estación)
+  g.push(`<rect x="6" y="30" width="${W - 12}" height="28" rx="3" fill="${P.celeste}" ${O}/>`);
+  g.push(`<rect x="4" y="26" width="${W - 8}" height="7" rx="3" fill="#5bb8de" ${O}/>`);
+  // Cruz de salud roja sobre el techo
+  g.push(`<rect x="${W / 2 - 5}" y="8" width="10" height="26" fill="#e0453f" ${O}/>`);
+  g.push(`<rect x="${W / 2 - 15}" y="17" width="30" height="10" fill="#e0453f" ${O}/>`);
+  // Sombra del alero
+  g.push(`<rect x="10" y="64" width="${W - 20}" height="3" fill="rgba(0,0,0,0.18)" stroke="none"/>`);
+  return svg(W, H, g.join(''));
+}
+
+async function buildHospital() {
+  await sharp(Buffer.from(hospitalSVG())).png().toFile(`${OUT}/sprites/hospital.png`);
 }
 
 // ---------- Criaderos (64×64, estados agua | vacio | limpio + capa de agua aparte) ----------
@@ -674,6 +736,7 @@ await buildCriaderos();
 await buildFX();
 await buildVehiculo();
 await buildEstacion();
+await buildHospital();
 await buildBrotes();
 await buildSpray();
 console.log('Assets generados en', OUT);
@@ -1248,3 +1311,162 @@ async function buildV3() {
 
 const v3Files = await buildV3();
 console.log('Assets v3 generados:', v3Files.length);
+
+// ---------- Vecinos (NPC civiles decorativos, plan v4 §2) ----------
+// Mismo lenguaje visual que `characterSVG` (piel, línea de contorno, formas redondeadas,
+// sombra elíptica) y el mismo esquema de animación: 4 cuadros por dirección (0 idle, 1/3 pasos,
+// 2 neutro), frames [1,2,3,2] a 8 fps igual que `walk_<dir>` del jugador (ver BootScene.create).
+// Sin gorra, chaleco ni mochila fumigadora: son vecinos, no el Agente SEDES. Solo 2 direcciones
+// dibujadas ('down' de frente, 'up' de espaldas); `Vecinos.js` voltea en X para izquierda/derecha
+// (mismo truco que ya usa `characterSVG` para 'right' = 'left' volteado).
+//
+// Variedad de "tipo" (opts):
+//   - hombre (default): silueta tal cual estaba antes, sin cambios.
+//   - mujer: mismo tamaño, `peloLargo` agrega mechones que bajan por los costados de la cabeza
+//     hasta los hombros (de frente y de espaldas) — única diferencia de silueta pedida.
+//   - niño/a: mismo dibujo pero con `escala` < 1; el <g> que envuelve todo escala alrededor del
+//     punto (32, 60) —la base de la sombra/pies— para que el personaje se vea más chico sin
+//     flotar ni hundirse respecto del nivel de piso de los adultos.
+function vecinoSVG(colorRopa, dir, frame, { escala = 1, peloLargo = false } = {}) {
+  const stepL = frame === 1 ? -3 : frame === 3 ? 3 : 0;
+  const stepR = -stepL;
+  const bob = frame === 1 || frame === 3 ? -1 : 0;
+  const armDy = frame === 1 ? 2 : frame === 3 ? -2 : 0;
+  const g = [];
+  g.push(`<ellipse cx="32" cy="59" rx="12" ry="3.6" fill="rgba(0,0,0,0.22)"/>`);
+  // Piernas y zapatillas (mismo desplazamiento de paso que characterSVG).
+  const leg = (x, dy) =>
+    `<rect x="${x}" y="${44 + dy}" width="7" height="11" rx="2" fill="${P.marino}" ${O}/>` +
+    `<rect x="${x - 1}" y="${53 + dy}" width="9" height="5" rx="2.5" fill="${P.gris}" ${O}/>`;
+  g.push(leg(24, stepL), leg(33, stepR));
+  // Torso: remera lisa de un color (varía por vecino), sin franja reflectante ni logo.
+  const by = 28 + bob;
+  g.push(`<rect x="20" y="${by}" width="24" height="18" rx="6" fill="${colorRopa}" ${O}/>`);
+  // Brazos
+  g.push(`<rect x="15" y="${by + 3 + armDy}" width="5" height="12" rx="2.5" fill="${P.piel}" ${O}/>`);
+  g.push(`<rect x="44" y="${by + 3 - armDy}" width="5" height="12" rx="2.5" fill="${P.piel}" ${O}/>`);
+  // Cabeza y pelo (mismo tono que el pelo del jugador bajo la gorra)
+  const hy = 18 + bob;
+  g.push(`<circle cx="32" cy="${hy}" r="12" fill="${P.piel}" ${O}/>`);
+  if (dir === 'down') {
+    g.push(`<path d="M20 ${hy} a12 12 0 0 1 24 0 v-2.5 a12 12 0 0 0 -24 0 z" fill="${P.linea}" stroke="none"/>`);
+    if (peloLargo) {
+      g.push(`<path d="M19 ${hy - 2} q-3 10 1 18 q2 3 4 1 q-3 -8 -1 -19 z" fill="${P.linea}" stroke="none"/>`);
+      g.push(`<path d="M45 ${hy - 2} q3 10 -1 18 q-2 3 -4 1 q3 -8 1 -19 z" fill="${P.linea}" stroke="none"/>`);
+    }
+    g.push(`<circle cx="27.5" cy="${hy + 1}" r="1.6" fill="${P.linea}"/>`);
+    g.push(`<circle cx="36.5" cy="${hy + 1}" r="1.6" fill="${P.linea}"/>`);
+    g.push(`<path d="M29 ${hy + 5} q3 2 6 0" fill="none" stroke="${P.linea}" stroke-width="1.3" stroke-linecap="round"/>`);
+  } else {
+    // 'up': de espaldas, solo pelo (sin cara), igual criterio que characterSVG no dibuja cara atrás.
+    g.push(`<path d="M20 ${hy} a12 12 0 0 1 24 0 v6 a12 12 0 0 1 -24 0 z" fill="${P.linea}" stroke="none"/>`);
+    if (peloLargo) {
+      g.push(`<path d="M19 ${hy - 1} q-2 12 3 20 q3 3 5 0 q-4 -9 -2 -20 z" fill="${P.linea}" stroke="none"/>`);
+      g.push(`<path d="M45 ${hy - 1} q2 12 -3 20 q-3 3 -5 0 q4 -9 2 -20 z" fill="${P.linea}" stroke="none"/>`);
+    }
+  }
+  const body = escala === 1 ? g.join('') : `<g transform="translate(32,60) scale(${escala}) translate(-32,-60)">${g.join('')}</g>`;
+  return svg(T, T, body);
+}
+
+async function buildVecinos() {
+  // 9 variantes en total (2 direcciones x 4 cuadros x 9 = 72 PNG, antes 40 con solo 5):
+  //   - 5 hombres adultos (n=1..5, colores/silueta igual que antes, sin cambios).
+  //   - 2 mujeres adultas (n=6..7, mismo tamaño, pelo largo como única diferencia de silueta).
+  //   - 2 niños/as (n=8..9, mismo dibujo escalado 0.8x, pisando el mismo nivel de piso).
+  const opcionesPorTipo = {
+    hombre: {},
+    mujer: { peloLargo: true },
+    nino: { escala: 0.8 },
+  };
+  const variantes = [
+    { color: P.teja, tipo: 'hombre' },
+    { color: P.azulGorra, tipo: 'hombre' },
+    { color: P.verdeOscuro, tipo: 'hombre' },
+    { color: P.amarillo, tipo: 'hombre' },
+    { color: P.gris, tipo: 'hombre' },
+    { color: P.celeste, tipo: 'mujer' },
+    { color: P.tejaOscura, tipo: 'mujer' },
+    { color: P.verde, tipo: 'nino' },
+    { color: P.oliva, tipo: 'nino' },
+  ];
+  const out = {};
+  variantes.forEach(({ color, tipo }, i) => {
+    const n = i + 1;
+    for (const dir of ['down', 'up']) {
+      for (const frame of [0, 1, 2, 3]) {
+        out[`sprites/vecino_${n}_${dir}_${frame}`] = vecinoSVG(color, dir, frame, opcionesPorTipo[tipo]);
+      }
+    }
+  });
+  for (const [file, body] of Object.entries(out)) {
+    await sharp(Buffer.from(body)).png().toFile(`${OUT}/${file}.png`);
+  }
+  return Object.keys(out);
+}
+
+const vecinosFiles = await buildVecinos();
+console.log('Vecinos generados:', vecinosFiles.length);
+
+// ---------- Basura callejera (bolsa/botella/llanta, plan v4 §2) ----------
+// Mismo lenguaje visual que CRIADEROS (sombra elíptica, contorno con `O`, un highlight suave):
+// reemplaza el dibujo genérico que `Basura.js` generaba en tiempo de ejecución como respaldo
+// (`textureFor` ya prefiere esta textura real si existe, sin tocar ese archivo). 3 estados por
+// tipo: fresca (recién tirada) → acumulada (unos días, con manchas de tierra) → criadero (agua
+// sucia debajo: ya es un peligro), igual progresión que ya usan los criaderos de agua.
+const BASURA = {
+  bolsa() {
+    const shadow = `<ellipse cx="32" cy="54" rx="15" ry="4" fill="rgba(0,0,0,0.22)"/>`;
+    const bag = `<path d="M18 30 q-3 16 4 21 q10 6 20 0 q7 -5 4 -21 q-3 -7 -14 -7 q-11 0 -14 7 z" fill="#3a3f44" ${O}/>`;
+    const tie = `<path d="M27 22 q5 -7 10 0 l-1.5 9 h-7 z" fill="#3a3f44" ${O}/>`;
+    const highlight = `<path d="M22 33 q3 12 8 16" fill="none" stroke="#ffffff" stroke-opacity="0.25" stroke-width="2.4" stroke-linecap="round"/>`;
+    return { shadow, base: bag + tie + highlight };
+  },
+  botella() {
+    const shadow = `<ellipse cx="32" cy="55" rx="14" ry="4" fill="rgba(0,0,0,0.22)"/>`;
+    // Acostada, boca (tapa) a la izquierda.
+    const body = `<path d="M22 33 h20 a7 7 0 0 1 0 14 h-20 a3.5 3.5 0 0 1 -3.5 -3.5 v-7 a3.5 3.5 0 0 1 3.5 -3.5 z" fill="${P.verdeOscuro}" ${O}/>`;
+    const neck = `<path d="M10 37 a2.4 2.4 0 0 1 2.4 -2.4 h8 v10 h-8 a2.4 2.4 0 0 1 -2.4 -2.4 z" fill="#2f7a1a" ${O}/>`;
+    const cap = `<rect x="8" y="35.5" width="4" height="7" rx="1.4" fill="${P.grisClaro}" ${O}/>`;
+    const highlight = `<path d="M25 36 h14" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.8" stroke-linecap="round"/>`;
+    return { shadow, base: cap + neck + body + highlight };
+  },
+  llanta() {
+    const shadow = `<ellipse cx="32" cy="52" rx="17" ry="4.5" fill="rgba(0,0,0,0.22)"/>`;
+    const tire = `<circle cx="32" cy="34" r="17" fill="#2b2f33" ${O}/>` +
+      `<circle cx="32" cy="34" r="9.5" fill="${P.gris}" ${O}/>` +
+      `<circle cx="32" cy="34" r="4" fill="#1e2226" stroke="none"/>`;
+    let grooves = '';
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      grooves += `<line x1="${(32 + Math.cos(a) * 10.5).toFixed(1)}" y1="${(34 + Math.sin(a) * 10.5).toFixed(1)}" x2="${(32 + Math.cos(a) * 16.5).toFixed(1)}" y2="${(34 + Math.sin(a) * 16.5).toFixed(1)}" stroke="#1e2226" stroke-width="1.6"/>`;
+    }
+    return { shadow, base: tire + grooves };
+  },
+};
+
+const dirtSpots = (cx = 32, cy = 40) => `
+  <circle cx="${cx - 10}" cy="${cy + 6}" r="2.6" fill="${P.gris}" opacity="0.4"/>
+  <circle cx="${cx + 9}" cy="${cy + 3}" r="2" fill="${P.gris}" opacity="0.4"/>
+  <circle cx="${cx + 2}" cy="${cy + 9}" r="1.6" fill="${P.gris}" opacity="0.4"/>`;
+
+const charcoBasura = (cy = 50) => `
+  <ellipse cx="32" cy="${cy}" rx="20" ry="6.5" fill="${P.aguaSucia}" opacity="0.85" ${O}/>
+  <ellipse cx="26" cy="${cy - 1.5}" rx="3" ry="1" fill="#ffffff" opacity="0.35"/>`;
+
+async function buildBasura() {
+  const out = {};
+  for (const [tipo, fn] of Object.entries(BASURA)) {
+    const { shadow, base } = fn();
+    out[`sprites/basura_${tipo}_fresca`] = shadow + base;
+    out[`sprites/basura_${tipo}_acumulada`] = shadow + base + dirtSpots();
+    out[`sprites/basura_${tipo}_criadero`] = charcoBasura() + base + dirtSpots();
+  }
+  for (const [file, body] of Object.entries(out)) {
+    await sharp(Buffer.from(svg(T, T, body))).png().toFile(`${OUT}/${file}.png`);
+  }
+  return Object.keys(out);
+}
+
+const basuraFiles = await buildBasura();
+console.log('Basura generada:', basuraFiles.length);
