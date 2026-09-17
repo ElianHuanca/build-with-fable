@@ -67,4 +67,10 @@ export const es = {
   'cam.rec.albopictus': 'Retira hojas y agua de macetas, huecos y bambú.',
   'cam.rec.culex': 'Evita charcos y zanjas con agua estancada cerca de casa.',
   'cam.rec.anopheles': 'Usa mosquitero y repelente al anochecer en zonas rurales.',
+  'cam.reintentar': 'Reintentar',
+  'cam.error.red': 'No se pudo conectar con el servicio de identificación. Probá de nuevo.',
+  'cam.error.sinDeteccion': 'No se detectó ningún mosquito en la foto.',
+  'cam.error.noEsMosquito': 'Eso no parece ser un mosquito.',
+  'cam.error.otroMosquito': 'Es un mosquito, pero no de las 4 especies que sigue el juego.',
+  'cam.error.incierto': 'No estamos seguros de la especie. Probá con más luz o de más cerca.',
 };

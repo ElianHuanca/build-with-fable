@@ -13,16 +13,25 @@ const ROJO = '#e74c3c';
 const SNAP = 256;
 const ALBUM_KEY = 'dengue.album';
 const ANALISIS_MS = 2200;
+const ANALISIS_REAL_MIN_MS = 900; // para que la fase de análisis no se sienta instantánea
 const REGISTRY_ESPECIES_JORNADA = 'especiesReportadasJornada';
 const BADGE_DETECTIVE_CAMPO = 'detective-de-campo';
 
+// Fase 6 (docs/DESPLIEGUE_INFERENCIA.md §6): si está configurada, la foto real (cámara/galería)
+// se manda al servicio de inferencia del Pi (ml/pi/servidor.py) en vez de simular. El "apuntar"
+// dentro del juego (disparar()) sigue simulado siempre: no hay captura de cámara en vivo acá.
+const INFERENCE_URL = (import.meta.env.VITE_INFERENCE_URL || '').replace(/\/+$/, '');
+
 /**
- * Cámara con IA (demo simulada, v3 §1.2).
+ * Cámara con IA — demo simulada (v3 §1.2) salvo con foto real y VITE_INFERENCE_URL configurada,
+ * en cuyo caso identifica de verdad contra el servicio del Pi (Fase 6).
  *
  *   scene.launch('Camera', { brote: Brote|null, especieId: string|null, snapshotKey: 'cam_snap'|null })
  *
- * Fases: visor → (disparo: flash + click) → análisis (~2,2 s: escáner, puntos, barra, consola)
- * → resultado (tarjeta de especie, confianza 87–98 % estable por foto, chips, recomendación).
+ * Fases: visor → (disparo: flash + click) → análisis (~2,2 s en demo; en real, lo que tarde la
+ * llamada a /identify con un mínimo de ANALISIS_REAL_MIN_MS) → resultado (tarjeta de especie con
+ * confianza real, o tarjeta de "no identificado" si no hay match seguro — ver
+ * buildResultadoIncierto).
  * Emite en 'Game': 'camera:especie' { id, confianza } al guardar en el álbum y 'camera:cerrar' al cerrar.
  * Álbum: localStorage 'dengue.album' (array JSON de ids de especie).
  * Si no existe la textura del snapshot dibuja un fondo verde con un enjambre de muestra.
@@ -47,6 +56,10 @@ export class CameraScene extends Phaser.Scene {
     this.seed = 1;
     this.snapKeyReal = null; // textura propia (foto real) si el jugador usó cámara/galería, para poder liberarla
     this.inputsReales = [];
+    this.modoReal = false;      // true si esta identificación viene de /identify, no de la simulación
+    this.resultadoReal = null;  // respuesta cruda de /identify (ver ml/pi/servidor.py)
+    this.errorReal = null;      // error de red/HTTP si la llamada a /identify falló
+    this.scanActivo = null;
   }
 
   sfx(name) { this.game.events.emit('sfx', name); }
@@ -91,7 +104,11 @@ export class CameraScene extends Phaser.Scene {
     input.click();
   }
 
-  /** Carga el archivo elegido como textura y dispara el análisis igual que con la vista simulada. */
+  /**
+   * Carga el archivo elegido como textura y dispara la identificación: real contra el servicio
+   * del Pi si VITE_INFERENCE_URL está configurada (Fase 6), o la simulación de siempre si no
+   * (por ejemplo, en desarrollo local sin un Pi a mano).
+   */
   cargarFotoReal(file) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -101,11 +118,91 @@ export class CameraScene extends Phaser.Scene {
         if (anterior && this.textures.exists(anterior)) this.textures.remove(anterior);
         this.snapKeyReal = key;
         this.snapKey = key;
-        this.disparar();
+        if (INFERENCE_URL) this.identificarReal(file);
+        else this.disparar();
       });
       this.textures.addBase64(key, reader.result);
     };
     reader.readAsDataURL(file);
+  }
+
+  /**
+   * Identificación real (Fase 6): manda `file` a POST {INFERENCE_URL}/identify (ver
+   * ml/pi/servidor.py) y usa la misma coreografía visual de fases que disparar() (flash →
+   * análisis → resultado), pero la fase de análisis dura lo que tarde la red — con un mínimo
+   * (ANALISIS_REAL_MIN_MS) para que no se sienta instantánea — en vez de un tiempo fijo.
+   */
+  identificarReal(file) {
+    if (this.busy || this.fase !== 'visor') return;
+    this.busy = true;
+    this.sfx('click');
+    this.modoReal = true;
+    this.seed = (Date.now() % 100000) + 1;
+    this.resultadoReal = null;
+    this.errorReal = null;
+
+    const minEspera = new Promise((resolve) => this.time.delayedCall(ANALISIS_REAL_MIN_MS, resolve));
+    const datos = new FormData();
+    datos.append('foto', file);
+    const peticion = fetch(`${INFERENCE_URL}/identify`, { method: 'POST', body: datos })
+      .then((resp) => { if (!resp.ok) throw new Error(`HTTP ${resp.status}`); return resp.json(); })
+      .then((json) => { this.resultadoReal = json; })
+      .catch((e) => { this.errorReal = e; });
+
+    const flash = CameraFX.flash(this, 150);
+    this.time.delayedCall(150, () => {
+      this.busy = false;
+      this.fase = 'analisis';
+      this.layout(this.scale.width, this.scale.height);
+      if (flash.active) this.tweens.add({ targets: flash, alpha: 0, duration: 120, onComplete: () => flash.destroy() });
+      Promise.all([peticion, minEspera]).then(() => this.terminarAnalisisReal());
+    });
+  }
+
+  /**
+   * Traduce la respuesta de /identify al estado que ya usan buildResultado()/guardar(): si hay
+   * una detección segura de una de las 4 especies del juego, arma this.especie/this.confianza
+   * igual que disparar(); si no (sin detección, incierto, "otro_mosquito"/"no_es_mosquito", o
+   * error de red), deja this.especie en null y buildResultado muestra buildResultadoIncierto().
+   */
+  terminarAnalisisReal() {
+    if (this.fase !== 'analisis' || this.done) return;
+    this.scanActivo?.stop();
+    this.especie = null;
+    this.confianza = 0;
+    if (!this.errorReal) {
+      const detecciones = this.resultadoReal?.detecciones || [];
+      const mejor = detecciones.length
+        ? [...detecciones].sort((a, b) => b.confianza_especie - a.confianza_especie)[0]
+        : null;
+      this.mejorDeteccion = mejor;
+      if (mejor && mejor.seguro && SPECIES.some((s) => s.id === mejor.especie)) {
+        this.especie = speciesById(mejor.especie);
+        this.confianza = Math.round(mejor.confianza_especie * 100);
+      }
+    }
+    this.sfx('detect');
+    this.fase = 'resultado';
+    this.layout(this.scale.width, this.scale.height);
+  }
+
+  /** Mensaje para buildResultadoIncierto() según por qué no hay una especie confirmada. */
+  mensajeResultadoIncierto() {
+    if (this.errorReal) return t('cam.error.red');
+    if (!this.resultadoReal?.mosquito_detectado) return t('cam.error.sinDeteccion');
+    const especie = this.mejorDeteccion?.especie;
+    if (especie === 'no_es_mosquito') return t('cam.error.noEsMosquito');
+    if (especie === 'otro_mosquito') return t('cam.error.otroMosquito');
+    return t('cam.error.incierto');
+  }
+
+  /** Vuelve al visor para reintentar una identificación real que no dio una especie confirmada. */
+  reintentar() {
+    this.fase = 'visor';
+    this.busy = false;
+    this.resultadoReal = null;
+    this.errorReal = null;
+    this.layout(this.scale.width, this.scale.height);
   }
 
   // ---------------------------------------------------------------- muestra de respaldo
@@ -203,11 +300,11 @@ export class CameraScene extends Phaser.Scene {
 
   barraSuperior(W, geo) {
     const y = geo.safe.top + 18;
-    // Título + etiqueta DEMO
+    // Título + etiqueta DEMO (solo si no hay servicio real configurado, ver INFERENCE_URL)
     const title = this.add.text(geo.safe.left + 44, y, t('cam.titulo'), {
       fontFamily: FONT, fontSize: 18, fontStyle: 'bold', color: PALETTE.blanco,
     }).setOrigin(0, 0.5);
-    const demo = this.add.text(title.x + title.width + 10, y, t('cam.demo'), {
+    const demo = INFERENCE_URL ? null : this.add.text(title.x + title.width + 10, y, t('cam.demo'), {
       fontFamily: FONT, fontSize: 11, fontStyle: 'bold', color: PALETTE.linea,
       backgroundColor: PALETTE.amarillo, padding: { x: 6, y: 2 },
     }).setOrigin(0, 0.5);
@@ -233,7 +330,7 @@ export class CameraScene extends Phaser.Scene {
     xBtn.add(xg).setSize(...touchSize(40, 40)).setInteractive({ useHandCursor: true })
       .on('pointerover', () => xBtn.setScale(1.1)).on('pointerout', () => xBtn.setScale(1))
       .on('pointerdown', () => this.close());
-    this.root.add([ic, title, demo, bat, rec, xBtn]);
+    this.root.add([ic, title, ...(demo ? [demo] : []), bat, rec, xBtn]);
   }
 
   /** Imagen del snapshot recortada al rect (con máscara), sobre fondo gris. */
@@ -373,8 +470,11 @@ export class CameraScene extends Phaser.Scene {
     const foto = this.addFoto(photo, true);
     this.root.add(foto);
     const scan = CameraFX.scanner(this, photo, ANALISIS_MS, { passes: 2 });
+    this.scanActivo = scan;
     this.root.add(scan.obj);
-    const labels = txList(this.especie.senales).slice(0, 6);
+    // En modo real la especie recién se sabe al terminar (ver identificarReal): hasta entonces,
+    // solo puntos genéricos (alas/tórax/patas/abdomen) en vez de señales de una especie concreta.
+    const labels = this.especie ? txList(this.especie.senales).slice(0, 6) : [];
     // Completa hasta 4 puntos con marcas genéricas (alas, tórax, patas, abdomen)
     const extras = ['cam.pto.alas', 'cam.pto.torax', 'cam.pto.patas', 'cam.pto.abdomen'].map((k) => t(k)).filter((s) => !labels.includes(s));
     while (labels.length < 4 && extras.length) labels.push(extras.shift());
@@ -408,7 +508,7 @@ export class CameraScene extends Phaser.Scene {
     con.lineStyle(1, hex(PALETTE.celeste), 0.4).strokeRoundedRect(px, y, pw, conH, 8);
     this.root.add(con);
     const lines = [t('cam.log1'), t('cam.log2', { n: SPECIES.length }), t('cam.log3')];
-    const times = [0, 900, ANALISIS_MS - 150];
+    const times = this.modoReal ? [0, 500, 1100] : [0, 900, ANALISIS_MS - 150];
     lines.forEach((s, i) => {
       const tt = this.add.text(px + 12, y + 12 + i * 26, `> ${s}`, {
         fontFamily: 'Consolas, Menlo, monospace', fontSize: 13, color: i === 2 ? PALETTE.verde : PALETTE.celeste,
@@ -421,32 +521,42 @@ export class CameraScene extends Phaser.Scene {
     this.root.add(cur);
     this.tweens.add({ targets: cur, alpha: 0, duration: 400, yoyo: true, repeat: -1 });
 
-    // Porcentaje con easing y pequeñas pausas (encadenado ≈ 2,2 s)
+    // Porcentaje: en demo, encadenado con easing y pequeñas pausas que termina solo (≈ 2,2 s) y
+    // dispara la fase de resultado por timer. En modo real la duración no se conoce de antemano
+    // (depende de la red), así que la barra solo sube y se queda cerca del final — terminarAnalisisReal()
+    // (disparada por identificarReal() al resolver la llamada real) hace el cambio de fase.
     const state = { p: 0 };
     const upd = () => { drawBar(state.p); pct.setText(`${Math.round(state.p * 100)} %`); };
-    this.tweens.chain({
-      targets: state,
-      tweens: [
-        { p: 0.34, duration: 500, ease: 'Sine.easeOut', onUpdate: upd },
-        { p: 0.34, duration: 180 },
-        { p: 0.63, duration: 420, ease: 'Sine.easeInOut', onUpdate: upd },
-        { p: 0.63, duration: 240 },
-        { p: 0.89, duration: 460, ease: 'Sine.easeInOut', onUpdate: upd },
-        { p: 0.89, duration: 160 },
-        { p: 1, duration: 240, ease: 'Quad.easeOut', onUpdate: upd },
-      ],
-    });
-    this.timers.push(this.time.delayedCall(ANALISIS_MS + 300, () => {
-      if (this.fase !== 'analisis') return;
-      scan.stop();
-      this.sfx('detect');
-      this.fase = 'resultado';
-      this.layout(this.scale.width, this.scale.height);
-    }));
+    if (this.modoReal) {
+      this.tweens.add({ targets: state, p: 0.92, duration: 1600, ease: 'Sine.easeOut', onUpdate: upd });
+    } else {
+      this.tweens.chain({
+        targets: state,
+        tweens: [
+          { p: 0.34, duration: 500, ease: 'Sine.easeOut', onUpdate: upd },
+          { p: 0.34, duration: 180 },
+          { p: 0.63, duration: 420, ease: 'Sine.easeInOut', onUpdate: upd },
+          { p: 0.63, duration: 240 },
+          { p: 0.89, duration: 460, ease: 'Sine.easeInOut', onUpdate: upd },
+          { p: 0.89, duration: 160 },
+          { p: 1, duration: 240, ease: 'Quad.easeOut', onUpdate: upd },
+        ],
+      });
+      this.timers.push(this.time.delayedCall(ANALISIS_MS + 300, () => {
+        if (this.fase !== 'analisis') return;
+        scan.stop();
+        this.sfx('detect');
+        this.fase = 'resultado';
+        this.layout(this.scale.width, this.scale.height);
+      }));
+    }
   }
 
   // ---------------------------------------------------------------- 4. resultado
   buildResultado(W, H, geo) {
+    // Modo real sin especie confirmada (sin detección, incierto, "otro_mosquito"/"no_es_mosquito",
+    // o error de red — ver terminarAnalisisReal): tarjeta simple en vez de la ficha de especie.
+    if (this.modoReal && !this.especie) { this.buildResultadoIncierto(W, H, geo); return; }
     const { photo, panel, portrait } = geo;
     const sp = this.especie;
     const foto = this.addFoto(photo, true);
@@ -549,6 +659,41 @@ export class CameraScene extends Phaser.Scene {
 
     this.tweens.add({ targets: card, alpha: 1, duration: 260, ease: 'Sine.easeOut' });
     // Si la tarjeta no cabe en horizontal muy bajo, escalar contenido: reducir alpha no ayuda; se acepta recorte leve.
+  }
+
+  /**
+   * Resultado del modo real cuando no hay una especie confirmada (ver buildResultado y
+   * terminarAnalisisReal): tarjeta simple con el motivo (mensajeResultadoIncierto) y un botón
+   * para reintentar en vez de la ficha completa de especie.
+   */
+  buildResultadoIncierto(W, H, geo) {
+    const { photo, panel } = geo;
+    const foto = this.addFoto(photo, true);
+    this.root.add(foto);
+
+    const card = this.add.container(panel.x, panel.y).setAlpha(0);
+    this.root.add(card);
+    const cw = panel.w, ch = panel.h;
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.35).fillRoundedRect(6, 8, cw, ch, 16);
+    bg.fillStyle(hex(PALETTE.blanco), 1).fillRoundedRect(0, 0, cw, ch, 16);
+    bg.lineStyle(4, hex(PALETTE.marino), 1).strokeRoundedRect(0, 0, cw, ch, 16);
+    card.add(bg);
+
+    const pad = 18;
+    card.add(this.add.text(cw / 2, pad + 32, this.errorReal ? '📡' : '❓', { fontSize: 44 }).setOrigin(0.5));
+    card.add(this.add.text(cw / 2, pad + 72, this.mensajeResultadoIncierto(), {
+      fontFamily: FONT, fontSize: 15, fontStyle: 'bold', color: PALETTE.marino, align: 'center',
+      wordWrap: { width: cw - pad * 2 },
+    }).setOrigin(0.5, 0));
+
+    const btnH = 48, bw = Math.min(210, (cw - pad * 3) / 2);
+    const by = ch - pad - btnH / 2;
+    card.add(this.makeButton(cw / 2 - bw / 2 - pad / 2, by, bw, btnH, t('cam.reintentar'),
+      PALETTE.celeste, PALETTE.azulGorra, () => this.reintentar()));
+    card.add(this.makeButton(cw / 2 + bw / 2 + pad / 2, by, bw, btnH, t('cam.cerrar'), PALETTE.grisClaro, PALETTE.gris, () => this.close()));
+
+    this.tweens.add({ targets: card, alpha: 1, duration: 260, ease: 'Sine.easeOut' });
   }
 
   makeButton(x, y, w, h, label, color, hover, cb) {

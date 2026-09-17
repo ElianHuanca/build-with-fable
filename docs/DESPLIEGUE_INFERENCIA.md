@@ -154,78 +154,69 @@ Vercel mande en cada request, chequeada en `servidor.py` antes de correr la infe
 seguridad fuerte (la key queda en el bundle del frontend, visible a quien inspeccione el tráfico),
 pero frena el abuso casual/scraping automatizado mejor que dejarlo totalmente abierto.
 
-## 6. Integración con el juego (Fase 6 del plan)
+## 6. Integración con el juego (Fase 6 del plan) — ✅ HECHO en `CameraScene.js`
 
-El punto exacto donde hoy se **simula** la identificación es
-`src/scenes/CameraScene.js`:
+Implementado en `src/scenes/CameraScene.js` (2026-09-17), verificado con `npm run build` y con el
+dev server sirviendo el módulo sin errores. **No se pudo probar interactivamente en un navegador
+real desde esta sesión** (Pi sin acceso a un Chrome controlable) — falta un smoke test manual con
+un dispositivo real antes de confiar en el flujo completo end-to-end.
 
-- `disparar()` (línea ~345): sortea especie + confianza al azar (87-98%) en vez de llamar al
-  modelo real.
-- `elegirFotoReal(camara)` / `cargarFotoReal(file)` (líneas 74-109): esto **ya funciona** — abre
-  la cámara trasera del celular o la galería (`<input type=file capture=environment>`), carga el
-  archivo como textura, y hoy dispara la misma simulación (`disparar()`). Es el punto de enganche:
-  ese `File` real es justo lo que hay que mandar a `/identify` en vez de simular.
+- `disparar()` (el disparador principal del visor) **sigue simulado siempre** — no hay captura de
+  cámara en vivo en el canvas de Phaser, así que "apuntar y disparar" no tiene una foto real que
+  mandar. Solo las dos alternativas de foto real usan el servicio.
+- `elegirFotoReal(camara)` / `cargarFotoReal(file)`: sin cambios en cómo abren la cámara/galería;
+  al cargar el archivo, si `VITE_INFERENCE_URL` está configurada llaman a `identificarReal(file)`
+  (nuevo), si no siguen llamando a `disparar()` (simulación, útil para desarrollar sin Pi a mano).
+- `identificarReal(file)` (nuevo): hace `POST {VITE_INFERENCE_URL}/identify` con el archivo,
+  reutiliza la coreografía visual de `disparar()` (flash → fase `analisis`), y la fase de análisis
+  dura lo que tarde la red (mínimo `ANALISIS_REAL_MIN_MS` = 900 ms para que no se sienta
+  instantánea) en vez del tiempo fijo de la demo.
+- `terminarAnalisisReal()` (nuevo): traduce la respuesta de `/identify` — si hay una detección
+  `seguro: true` de una de las 4 especies del juego, arma `this.especie`/`this.confianza` igual
+  que `disparar()` (con la detección de mayor `confianza_especie` si hay varias cajas); si no
+  (sin detección, incierta, `otro_mosquito`/`no_es_mosquito`, o error de red), deja `this.especie`
+  en `null`.
+- `buildResultado()`: si `this.modoReal && !this.especie`, delega en `buildResultadoIncierto()`
+  (nuevo) — tarjeta simple con el motivo (`mensajeResultadoIncierto()`) y un botón "Reintentar"
+  (`reintentar()`, nuevo) que vuelve al visor sin cerrar la cámara.
+- `barraSuperior()`: la etiqueta "DEMO" ahora es condicional — no se muestra cuando
+  `VITE_INFERENCE_URL` está configurada. Nota: como el disparador principal sigue simulado
+  siempre, en rigor la demo nunca desaparece del todo hasta que haya captura de cámara real en el
+  canvas; se siguió el criterio ya acordado (ocultarla cuando hay backend real) sabiendo esa
+  limitación.
 
 ### 6.1 Variable de entorno para la URL del servicio
 
-Vite (usado por este proyecto, ver `vite.config.js`) expone automáticamente cualquier variable
-que empiece con `VITE_` vía `import.meta.env`. En Vercel: Project Settings → Environment
-Variables → `VITE_INFERENCE_URL` = `https://raspberrypi.tail8a5244.ts.net` (la URL del §4, ya
-activa). Para desarrollo local, un `.env.local` (no versionado) con la misma variable apuntando a
-la IP de LAN del Pi, o a `http://localhost:8080` si se corre el servicio en la propia máquina.
+Vite (ver `vite.config.js`) expone automáticamente cualquier variable que empiece con `VITE_` vía
+`import.meta.env`. **Falta configurarla** — nada de esto tiene efecto hasta que exista:
 
-### 6.2 Cambio propuesto en `cargarFotoReal`
+- **En Vercel:** Project Settings → Environment Variables → `VITE_INFERENCE_URL` =
+  `https://raspberrypi.tail8a5244.ts.net` (la URL del §4).
+- **En desarrollo local:** un `.env.local` (no versionado, Vite lo lee solo) con la misma
+  variable, apuntando a la IP de LAN del Pi o a `http://localhost:8080` si se corre el servicio en
+  la propia máquina.
 
-Reemplazar la llamada directa a `this.disparar()` por una llamada real al servicio, manteniendo
-el flujo de UI (fases `visor → análisis → resultado`) que ya existe:
+Sin esta variable, el juego sigue en modo demo (simulación) tal como estaba — el cambio es
+enteramente opt-in por variable de entorno, no rompe nada mientras no se configure.
 
-```js
-async identificarFotoReal(file) {
-  this.busy = true;
-  this.fase = 'analisis';
-  this.layout(this.scale.width, this.scale.height);
+### 6.2 Pendiente: probar en un dispositivo real
 
-  const datos = new FormData();
-  datos.append('foto', file);
-  const base = import.meta.env.VITE_INFERENCE_URL;
+No se probó el flujo completo (sacar/elegir foto → ver el resultado real) en un navegador de
+verdad todavía. Antes de confiar en esto:
+1. Configurar `VITE_INFERENCE_URL` en `.env.local` apuntando al Pi.
+2. `npm run dev -- --host`, abrir desde el celular en la misma red.
+3. Probar los 3 casos: foto con mosquito reconocible, foto sin mosquito, y (opcional) cortar
+   la red del Pi a mitad de una identificación para ver el mensaje de error.
 
-  try {
-    const resp = await fetch(`${base}/identify`, { method: 'POST', body: datos });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const json = await resp.json();
-    this.resultadoReal = json;  // guardar para buildResultado()
-  } catch (e) {
-    this.errorReal = e;        // manejar "sin conexión" en buildResultado()
-  } finally {
-    this.busy = false;
-    this.fase = 'resultado';
-    this.layout(this.scale.width, this.scale.height);
-  }
-}
-```
+### 6.3 Pendiente, no resuelto por este cambio
 
-Y en `cargarFotoReal` (línea ~104), cambiar `this.disparar()` por `this.identificarFotoReal(file)`
-cuando `base` esté configurado (si no, seguir con la simulación — útil para desarrollar sin Pi a
-mano).
-
-### 6.3 Casos a manejar en `buildResultado()` (hoy no existen, hay que agregarlos)
-
-- **`mosquito_detectado: false`** → sin cajas: mostrar "no se detectó ningún mosquito en la foto",
-  sin tarjeta de especie.
-- **`seguro: false`** (confianza por debajo de `CLASIFICADOR_CONFIANZA_MINIMA`, especie
-  `"incierto"`) → mostrar como "no estoy seguro", no forzar una especie del juego.
-- **Sin conexión / error de red** (`this.errorReal`) → mensaje claro ("no se pudo conectar al
-  servicio de identificación, probá de nuevo"), sin trabar el flujo ni perder la foto.
-- **Múltiples detecciones** → hoy el juego asume una sola especie por foto; el modelo real puede
-  devolver varias cajas. Definir criterio (¿la de mayor confianza? ¿mostrar todas?) antes de
-  implementar — no asumido en este documento.
-
-### 6.4 Sacar la etiqueta "DEMO"
-
-`barraSuperior()` (línea ~210) pone la etiqueta `cam.demo` a mano. Sacarla (o condicionarla a
-`!base`, es decir, seguir mostrando "DEMO" solo cuando *no* hay `VITE_INFERENCE_URL` configurada
-y el juego cae en la simulación) es parte de este cambio, no antes — el criterio ya está escrito
-en el plan (§10 de `PLAN_V5_MODELO_IA.md`): no sacarla hasta tener el modelo real conectado.
+- **Múltiples detecciones:** si `/identify` devuelve varias cajas, hoy se usa la de mayor
+  `confianza_especie` y el resto se descarta silenciosamente (no se le muestra nada al jugador
+  sobre ellas). Si en la práctica las fotos suelen traer varios mosquitos, esto vale la pena
+  revisarlo (¿mostrar todas? ¿pedir que la foto tenga uno solo?).
+- **CORS con el dominio real:** sigue con el placeholder `dengue-invaders.vercel.app` (§5) — el
+  `fetch` de `identificarReal` va a fallar por CORS hasta que se actualice `ORIGENES_PERMITIDOS`
+  en `servidor.py` con el dominio real de Vercel.
 
 ## 7. Operación del servicio en el Pi
 
@@ -258,5 +249,9 @@ implementado todavía; si esto se vuelve un problema, es un paso pendiente para 
    **Apenas exista el dominio real, actualizar `ORIGENES_PERMITIDOS` en `servidor.py`** (puede no
    coincidir exactamente con el placeholder) y reiniciar el servicio. Después, probar `fetch`
    desde la consola del navegador contra el dominio de Vercel ya desplegado para confirmar.
-4. Implementar §6 en `CameraScene.js` (llamada real + manejo de casos) y sacar la etiqueta "DEMO".
-5. Evaluar la cabecera `X-Api-Key` (§5) si el endpoint empieza a recibir tráfico no deseado.
+4. ~~Implementar §6 en `CameraScene.js` (llamada real + manejo de casos) y sacar la etiqueta
+   "DEMO"~~ → **hecho (2026-09-17)**, pero **sin probar en un navegador/dispositivo real todavía**
+   (§6.2) — hacerlo antes de dar el flujo por confiable.
+5. Cuando exista el dominio real de Vercel: actualizar `ORIGENES_PERMITIDOS` en `servidor.py` y
+   `VITE_INFERENCE_URL` en Vercel, y recién ahí probar `identificarReal` end-to-end (§6.2, §6.3).
+6. Evaluar la cabecera `X-Api-Key` (§5) si el endpoint empieza a recibir tráfico no deseado.

@@ -67,4 +67,10 @@ export const en = {
   'cam.rec.albopictus': 'Remove leaves and water from pots, holes and bamboo.',
   'cam.rec.culex': 'Avoid puddles and ditches with stagnant water near home.',
   'cam.rec.anopheles': 'Use a bed net and repellent at dusk in rural areas.',
+  'cam.reintentar': 'Try again',
+  'cam.error.red': 'Could not reach the identification service. Try again.',
+  'cam.error.sinDeteccion': 'No mosquito was detected in the photo.',
+  'cam.error.noEsMosquito': "That doesn't look like a mosquito.",
+  'cam.error.otroMosquito': "It's a mosquito, but not one of the 4 species the game tracks.",
+  'cam.error.incierto': 'Not sure about the species. Try with more light or closer up.',
 };
