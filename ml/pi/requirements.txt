@@ -2,4 +2,5 @@ onnxruntime
 numpy
 Pillow
 flask
+flask-cors
 gunicorn

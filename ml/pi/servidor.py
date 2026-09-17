@@ -12,10 +12,9 @@ Uso:
 Cada foto recibida en /identify se guarda en ml/pi/subidas/ (imagen + .json con el resultado),
 para el flywheel de reentrenamiento de la Fase 7. Ver docs/PLAN_V5_MODELO_IA.md §8.
 
-Nota: por ahora no hay CORS habilitado, así que solo se puede llamar a /identify desde el mismo
-origen (esta página) o con curl/apps nativas. Para que un frontend en OTRO dominio (p. ej. el
-juego servido en Vercel) pueda llamarlo desde el navegador, hay que agregar flask-cors restringido
-al dominio real una vez que se conozca — ver docs/DESPLIEGUE_INFERENCIA.md.
+CORS habilitado solo en /identify, restringido a ORIGENES_PERMITIDOS (el juego en Vercel + vite
+dev) — no CORS(app) a secas, para no dejar /salud ni / abiertos a cualquier origen sin necesidad.
+Ver docs/DESPLIEGUE_INFERENCIA.md §5.
 """
 
 from __future__ import annotations
@@ -27,6 +26,7 @@ from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template_string, request
+from flask_cors import CORS
 from PIL import Image
 
 from inferencia import MotorInferencia
@@ -35,7 +35,15 @@ CARPETA_MODELOS = Path(__file__).parent / "modelos"
 CARPETA_SUBIDAS = Path(__file__).parent / "subidas"
 CARPETA_SUBIDAS.mkdir(parents=True, exist_ok=True)
 
+# TODO: cuando el juego tenga un dominio de Vercel definitivo (custom o *.vercel.app real),
+# actualizar acá. "dengue-invaders.vercel.app" es un placeholder hasta el primer despliegue.
+ORIGENES_PERMITIDOS = [
+    "https://dengue-invaders.vercel.app",
+    "http://localhost:5173",  # vite dev
+]
+
 app = Flask(__name__)
+CORS(app, resources={r"/identify": {"origins": ORIGENES_PERMITIDOS}})
 motor = MotorInferencia(CARPETA_MODELOS)
 
 PAGINA_PRUEBA = """<!doctype html>

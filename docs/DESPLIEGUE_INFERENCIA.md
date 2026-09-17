@@ -121,34 +121,31 @@ Esa URL es la que el juego en Vercel va a usar como base (`VITE_INFERENCE_URL`, 
   directo a escaneos de internet sin ninguna capa de por medio, y hay que mantener el
   certificado a mano.
 
-## 5. CORS — pendiente, hacer DESPUÉS de tener la URL de Vercel
+## 5. CORS (✅ HECHO, con dominio placeholder)
 
-`servidor.py` hoy **no** manda cabeceras CORS a propósito: es un endpoint que además guarda en
-disco (`ml/pi/subidas/`) todo lo que le suben, así que abrirlo a *cualquier origen* (`CORS(app)`
-sin restricción) dejaría que cualquier página web ajena le mande uploads a costa de quien la
-visite — llenaría el disco del Pi o generaría carga de cómputo sin control. Por eso este paso
-quedó explícitamente para cuando se conozca el dominio real:
-
-```bash
-/home/admin/build-with-fable/ml/pi/venv/bin/pip install flask-cors
-echo flask-cors >> /home/admin/build-with-fable/ml/pi/requirements.txt
-```
-
-En `servidor.py`, restringido al dominio real de Vercel (reemplazar por el que corresponda):
+`servidor.py` tiene CORS habilitado **solo en `/identify`** (no `CORS(app)` a secas — `/salud` y
+`/` siguen sin cabeceras CORS, no hace falta), restringido a la lista `ORIGENES_PERMITIDOS` en
+`servidor.py`:
 
 ```python
-from flask_cors import CORS
-
-app = Flask(__name__)
-CORS(app, resources={r"/identify": {"origins": [
-    "https://dengue-invaders.vercel.app",   # dominio real de producción
-    "http://localhost:5173",                # vite dev, para probar en la notebook
-]}})
+ORIGENES_PERMITIDOS = [
+    "https://dengue-invaders.vercel.app",
+    "http://localhost:5173",  # vite dev
+]
 ```
 
-Restringir a `resources={r"/identify": ...}` (no `CORS(app)` a secas) para no habilitar CORS en
-`/salud` ni en `/` sin necesidad. Después de este cambio, reiniciar el servicio:
-`sudo systemctl restart dengue-invaders-inferencia.service`.
+**`dengue-invaders.vercel.app` es un placeholder** — el juego todavía no está desplegado en
+Vercel. Cuando exista el dominio real (puede no ser exactamente ese, Vercel asigna el subdominio
+según el nombre del proyecto, o puede terminar siendo un dominio custom), **actualizar esa lista en
+`servidor.py`** y reiniciar el servicio:
+
+```bash
+sudo systemctl restart dengue-invaders-inferencia.service
+```
+
+Verificado (LAN y vía Tailscale Funnel) que el preflight `OPTIONS /identify` devuelve
+`Access-Control-Allow-Origin` cuando el `Origin` está en la lista, y no lo devuelve para
+cualquier otro origen (el navegador bloquea la respuesta en ese caso).
 
 **Protección adicional a considerar** (recomendado, no implementado todavía): el endpoint queda
 público sin autenticación — cualquiera con la URL puede llamarlo. Como no hay sistema de usuarios
@@ -256,7 +253,10 @@ implementado todavía; si esto se vuelve un problema, es un paso pendiente para 
    `https://raspberrypi.tail8a5244.ts.net`, verificado con `/salud` e `/identify` desde afuera.
 2. Desplegar el juego en Vercel con `VITE_INFERENCE_URL` sin usar todavía (el juego sigue en modo
    demo hasta el paso 4).
-3. Agregar CORS restringido al dominio real de Vercel (§5), reiniciar el servicio, probar `fetch`
-   desde la consola del navegador contra el dominio de Vercel ya desplegado.
+3. ~~Agregar CORS restringido al dominio de Vercel (§5)~~ → **hecho (2026-09-17)**, pero con
+   `dengue-invaders.vercel.app` como **placeholder** — el juego todavía no está desplegado.
+   **Apenas exista el dominio real, actualizar `ORIGENES_PERMITIDOS` en `servidor.py`** (puede no
+   coincidir exactamente con el placeholder) y reiniciar el servicio. Después, probar `fetch`
+   desde la consola del navegador contra el dominio de Vercel ya desplegado para confirmar.
 4. Implementar §6 en `CameraScene.js` (llamada real + manejo de casos) y sacar la etiqueta "DEMO".
 5. Evaluar la cabecera `X-Api-Key` (§5) si el endpoint empieza a recibir tráfico no deseado.
