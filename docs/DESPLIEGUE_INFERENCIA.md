@@ -27,6 +27,10 @@ Estado real, verificado en la Raspberry Pi del proyecto (2026-09-17). Complement
 - Modelo probado end-to-end con fotos reales (`~/Documentos/CapturasPI/`): detecta, clasifica
   especie o marca "incierto" según el umbral de confianza (`CLASIFICADOR_CONFIANZA_MINIMA` en
   `ml/pi/inferencia.py`), y devuelve `mosquito_detectado: false` cuando no hay nada.
+- **El Pi ya está expuesto a internet vía Tailscale Funnel** (§4 hecho): URL pública estable
+  **`https://raspberrypi.tail8a5244.ts.net`**, HTTPS válido (Let's Encrypt), probada desde afuera
+  del Pi con `/salud` y `/identify` funcionando. `tailscaled` queda `enabled` — sobrevive a
+  reinicios del Pi.
 
 ## 2. Probarlo HOY desde la misma red (celular o notebook)
 
@@ -64,7 +68,7 @@ del navegador se ponen en el medio apenas el juego intente llamar al Pi desde ah
 Ninguno de los tres está resuelto todavía. Son los tres pasos pendientes antes de conectar el
 juego real (Fase 6) a un Pi que "se deja encendido" para que lo use gente fuera de la red local.
 
-## 4. Exponer el Pi a internet con HTTPS — recomendado: Tailscale Funnel
+## 4. Exponer el Pi a internet con HTTPS — Tailscale Funnel (✅ HECHO)
 
 **Por qué esta opción y no otra:** no requiere comprar/tener un dominio propio, da HTTPS
 automático (Let's Encrypt gestionado por Tailscale), no requiere abrir puertos en el router
@@ -72,25 +76,37 @@ automático (Let's Encrypt gestionado por Tailscale), no requiere abrir puertos 
 es estable entre reinicios del servicio (no cambia cada vez, a diferencia de un túnel gratuito de
 ngrok o de un "quick tunnel" de Cloudflare).
 
-Pasos (a correr en el Pi, próxima sesión):
+**Ya está hecho.** URL pública: **`https://raspberrypi.tail8a5244.ts.net`**. Pasos que se
+corrieron (dejados acá para referencia / para replicar en otro dispositivo):
 
 ```bash
 # 1. Instalar Tailscale
 curl -fsSL https://tailscale.com/install.sh | sh
 
-# 2. Conectar el Pi a tu tailnet (abre un link para loguearte con tu cuenta — Google/GitHub/email)
+# 2. Conectar el Pi a la tailnet (abre un link para loguearse con la cuenta — quedó con smn404)
 sudo tailscale up
 
-# 3. Habilitar Funnel para el puerto del servicio (expone SOLO ese puerto, públicamente, con TLS)
-sudo tailscale funnel 8080
+# 3. Habilitar la función Funnel a nivel de tailnet (una sola vez, desde el link que tira el
+#    paso 4 la primera vez que se corre — es un flag de cuenta, no del dispositivo)
+
+# 4. Habilitar Funnel para el puerto del servicio, en modo persistente (--bg: sigue corriendo
+#    aunque se cierre la terminal; sin --bg se cae apenas termina el proceso en primer plano)
+sudo tailscale funnel --bg 8080
 ```
 
-Esto da una URL pública estable tipo `https://raspberrypi.<tu-tailnet>.ts.net` que redirige (con
-HTTPS válido) al `localhost:8080` del Pi. Verificar con:
+`tailscaled` quedó `enabled` a nivel systemd, así que el Funnel sobrevive a reinicios del Pi sin
+tener que volver a correr el paso 4.
+
+**Nota sobre el certificado:** la primera vez que se activa el Funnel, Tailscale pide el
+certificado TLS a Let's Encrypt en el momento (no antes) — la primera llamada externa puede tardar
+~1-2 minutos y devolver un error de TLS mientras tanto (`tlsv1 alert internal error` en curl). Se
+resuelve solo; no hace falta reintentar el comando, solo esperar y volver a pegarle al endpoint.
+
+Verificar con:
 
 ```bash
 tailscale funnel status
-curl https://raspberrypi.<tu-tailnet>.ts.net/salud
+curl https://raspberrypi.tail8a5244.ts.net/salud
 ```
 
 Esa URL es la que el juego en Vercel va a usar como base (`VITE_INFERENCE_URL`, ver §6).
@@ -157,9 +173,9 @@ El punto exacto donde hoy se **simula** la identificación es
 
 Vite (usado por este proyecto, ver `vite.config.js`) expone automáticamente cualquier variable
 que empiece con `VITE_` vía `import.meta.env`. En Vercel: Project Settings → Environment
-Variables → `VITE_INFERENCE_URL` = `https://raspberrypi.<tu-tailnet>.ts.net` (la URL del §4).
-Para desarrollo local, un `.env.local` (no versionado) con la misma variable apuntando a la IP de
-LAN del Pi, o a `http://localhost:8080` si se corre el servicio en la propia máquina.
+Variables → `VITE_INFERENCE_URL` = `https://raspberrypi.tail8a5244.ts.net` (la URL del §4, ya
+activa). Para desarrollo local, un `.env.local` (no versionado) con la misma variable apuntando a
+la IP de LAN del Pi, o a `http://localhost:8080` si se corre el servicio en la propia máquina.
 
 ### 6.2 Cambio propuesto en `cargarFotoReal`
 
@@ -236,8 +252,8 @@ implementado todavía; si esto se vuelve un problema, es un paso pendiente para 
 
 ## 8. Pendientes para la próxima sesión (orden sugerido)
 
-1. Instalar y configurar Tailscale Funnel en el Pi (§4) → confirmar URL pública estable con
-   `curl https://.../salud`.
+1. ~~Instalar y configurar Tailscale Funnel en el Pi (§4)~~ → **hecho (2026-09-17)**:
+   `https://raspberrypi.tail8a5244.ts.net`, verificado con `/salud` e `/identify` desde afuera.
 2. Desplegar el juego en Vercel con `VITE_INFERENCE_URL` sin usar todavía (el juego sigue en modo
    demo hasta el paso 4).
 3. Agregar CORS restringido al dominio real de Vercel (§5), reiniciar el servicio, probar `fetch`
