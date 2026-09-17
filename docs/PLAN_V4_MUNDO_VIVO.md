@@ -9,11 +9,12 @@ y hospitales saturados. El jugador **ayuda** a las autoridades; no las reemplaza
 
 Antes de tocar código, dos preguntas para el usuario en la sección 7.
 
-**Estado de implementación (2026-09-15):** el usuario priorizó "mundo vivo + ciclo día/noche"
-(§2+§3) como punto de partida. Se implementó la primera mitad, §3 (ciclo día/noche →
-especie del brote), sin commitear todavía: ver la sección 3 más abajo, marcada **Hecho**.
-§2 (basura que ensucian los NPCs y madura en criadero) sigue pendiente, es la continuación
-natural de este mismo sprint.
+**Estado de implementación (2026-09-16):** §2, §3, §6, §8 y §1/§4 están **Hecho**; de §5 (el
+explorador) se hizo el loop de reporte a SEDES/CENETROP y la insignia por reportar las 4
+especies en una jornada. La única pieza del plan original sin cerrar es **§7** (progresión de
+niveles), que es una decisión del usuario, no una feature de código pendiente — ver "Gaps
+pendientes" al final de este documento para el detalle completo y qué quedó deliberadamente
+fuera de alcance en cada sección.
 
 ---
 
@@ -250,7 +251,48 @@ que solo ve una porción del trabajo en curso.
 
 ---
 
-## 4. Economía del Agente: pago, tienda, y qué pasa cuando ya no alcanza solo
+## 4. Economía del Agente: pago, tienda, y qué pasa cuando ya no alcanza solo · Hecho (2026-09-16)
+
+**Adaptaciones respecto a la propuesta original** (para no salirse del alcance — ver §9, "no
+convertir el juego en un city-builder"): el "tanque de fumigación más grande → menos recargas"
+se reemplazó por "fumigación rápida → -25% duración de fumigar", porque el juego no tenía (ni
+necesitaba) un sistema de munición/recargas — inventar uno solo para esa mejora habría sido
+scope creep. La "moto" se simplificó a una sola mejora "bicicleta" (+20% velocidad a pie). La
+cuadrilla se simplificó a un despacho automático de SEDES (sin diálogo de oferta con botón
+"Sí/No") cuando el jugador está objetivamente desbordado y el saldo alcanza — evita tener que
+diseñar una nueva UI de oferta interactiva sin arriesgar el layout responsivo ya afinado; el
+costo se sigue cobrando y avisando por toast, así que la lección de "recursos limitados, cuestan
+Bs" se mantiene intacta.
+
+**Qué se construyó** (sin commitear al 2026-09-16; núcleo hecho a mano en la sesión principal,
+Tienda y Cuadrilla con 2 agentes en paralelo, sin git, sin tocar GameScene.js):
+- `src/systems/SaveSystem.js`: cartera persistente (`saldoBs()`, `depositar()`, `gastar()` para
+  gastos puntuales, `comprarMejora()`/`tieneMejora()`/`efectoMejora()` para las 3 mejoras
+  permanentes de `MEJORAS`) — mismo patrón de blob JSON que ya usaba para estrellas/reto familiar.
+- `src/systems/Economia.js` (nuevo, mismo patrón que `Reputacion.js`): acumula los Bs ganados
+  DURANTE la jornada en curso (limpiar criadero +8, fumigar brote +12/16/20 según nivel, recoger
+  basura +4/+2 si tarde) y calcula el bono de SEDES al cerrar (`aplicarBonoJornada`, hasta 100 Bs
+  según % de barrio protegido). `depositarEnBilletera()` vuelca todo a `SaveSystem` una sola vez,
+  en `GameScene.finDeNivel()` — nunca a mitad de jornada, para que no se pueda gastar en la
+  Tienda un Bs de una partida que todavía puede terminar en epidemia.
+- `src/scenes/TiendaScene.js` (nuevo, agente en paralelo): pantalla de compras con las 3 mejoras,
+  abierta con un botón nuevo en la cabecera de la Biblioteca (no se tocó GameScene.js para esto:
+  la Tienda se abre DESDE la Biblioteca, que ya se abre desde la estación SEDES).
+- `src/systems/Cuadrilla.js` (nuevo, agente en paralelo): brigadistas que caminan desde la
+  estación hasta un brote y lo fumigan a la misma velocidad que el jugador a pie (nunca más
+  rápido — el mensaje es "recursos limitados", no "un segundo jugador gratis"). `GameScene`
+  decide cuándo ofrecerlo (`actualizarCuadrilla`, llamado cada frame): al tope de brotes activos
+  Y (queda poco tiempo O el jugador está lejos de todos), con cooldown de 25s.
+- `src/objects/Player.js`: `mejoraFactor` (multiplicador de velocidad de la mejora "bicicleta"),
+  aplicado una vez al crear al jugador, mismo patrón que `vehiculoFactor`.
+
+**Verificado en el navegador** (pestaña nueva, sin errores de consola): comprar "mochila" con
+300 Bs descuenta 150 y deja la tarjeta en "Ya la tienes"; comprar "bicicleta" y reiniciar el
+nivel confirma `player.mejoraFactor === 1.2` (persistió entre jornadas); `finDeNivel('completo')`
+con 3/5 criaderos calculó el bono (60 Bs, 60% protegido) y depositó el total correcto (28 ganado
++ 60 bono = 88, saldo 30→118); el gatillo automático de `actualizarCuadrilla` con 3 brotes
+activos y "poco tiempo" contrató un brigadista real (saldo 300→238, costo 70 Bs confirmado) que
+caminó visiblemente hacia el brote sin errores.
 
 ### 4.1 Moneda
 
@@ -306,10 +348,35 @@ registro, no fumigar):
 
 ---
 
-## 6. Enfermos, hospitales y la "reputación" del barrio
+## 6. Enfermos, hospitales y la "reputación" del barrio · Hecho (2026-09-15)
 
 Pieza que hoy no existe: consecuencia humana visible de la epidemia, más allá del número
 `EpidemicMeter`.
+
+**Qué se construyó** (sin commitear al 2026-09-15; hospital reubicado hecho a mano en la sesión
+principal, reputación y vecino enfermo con 2 agentes en paralelo sobre archivos disjuntos, sin
+permisos de git, integrados a mano en `GameScene.js` después — ver `features.json` del vault
+para el detalle completo de cada pieza):
+- **Hospital reubicado**: `GameScene.elegirPosicionHospital()` reemplaza el offset fijo anterior
+  — candidatos aleatorios descartando los que quedan cerca de la estación (min. 420px) o de
+  cualquier sólido (min. 80px), eligiendo el más lejano válido.
+- **Capacidad visible**: `Hospital.dibujarCamas()` dibuja una fila de iconos de cama (llenas/
+  vacías) sobre el edificio, actualizada solo al cambiar la ocupación; eventos Phaser
+  `'saturado'`/`'desaturado'` (al cruzar, no cada frame) disparan un aviso (`AlertToast`).
+- **Reputación del barrio** (`src/systems/Reputacion.js`): score 0-100 separado del riesgo de
+  epidemia, que sube con buen desempeño y baja fuerte con el hospital saturado — el "no es algo
+  que el jugador arregle directamente" de la propuesta original, tal cual. Aparece como línea en
+  el resumen de `LevelEndScene` (no se agregó una barra al HUD en vivo por riesgo de romper el
+  layout responsivo ya afinado; el registry ya expone `'reputacion'` para cuando se decida).
+- **Vecino enfermo** (extensión de `Vecinos.js`): el riesgo sostenido "enferma" visualmente a un
+  vecino (tinte + ícono, sin asset nuevo), que camina al hospital y se recupera solo — sin
+  simular traslados/ambulancia como sugería la propuesta original, versión más simple que cumple
+  el mismo propósito narrativo sin agregar una mecánica nueva para el jugador.
+
+**Verificado en el navegador** (pestaña nueva, sin errores de consola): hospital naciendo a
+1816px de la estación en una partida real; `dibujarCamas()` redibuja correctamente al llenarse/
+vaciarse; ambos eventos de saturación disparan; `reputacion` tickeando en vivo vía el registry;
+`vecinos.enfermar()`/`consumirRiesgo()` sin errores, ícono visible en captura.
 
 - **Vecinos NPC que se enferman**: cuando `EpidemicMeter` supera un umbral (ya existe el umbral
   de 60% para las estrellas), algún NPC cercano a un brote activo puede "enfermarse" (animación
@@ -377,6 +444,29 @@ Pedido explícito del usuario. Sin necesidad de redes sociales ni nada que requi
 - Todo el contenido nuevo relacionado a instituciones reales (SEDES, CENETROP, hospitales)
   necesita el mismo aviso de revisión que ya tiene el resto: esto es un prototipo educativo, no
   una fuente oficial.
+
+---
+
+## 10. Gaps pendientes (actualizado 2026-09-16)
+
+Con §2, §3, §6, §5 (parcial) y ahora §1/§4 hechos, del plan original de este documento **solo
+queda una pieza sin cerrar**, y no es de código:
+
+- **§7, progresión de niveles**: es una decisión del usuario, no una feature de código (¿nivel
+  nuevo o reciclar "Plan 3000"? ¿en qué orden se introducen mundo vivo/economía/hospital a un
+  jugador nuevo?) — sigue diferida, sin pedirse todavía. Es lo único que falta para considerar
+  "terminado" el plan v4 tal como está escrito en este documento.
+- **Barra de reputación en el HUD en vivo** (no estaba en el plan original, salió de implementar
+  §6): decidido no hacerlo — el layout responsivo de `HUDScene.js` ya costó varias rondas de
+  fixes en esta misma sesión (ver el incidente de controles táctiles) y agregar una tercera barra
+  sin que el usuario la pida explícitamente no vale el riesgo de regresión. El registry ya expone
+  `'reputacion'` por si se decide más adelante. Mismo criterio para un contador de Bs en el HUD
+  en vivo — el saldo ya es visible en la Tienda, que es donde importa para decidir una compra.
+- Ideas fuera del alcance de este documento que podrían salir de una futura sesión: una mejora
+  más grande en la Tienda (p. ej. una "moto" real distinta de la bicicleta, o un segundo nivel de
+  cada mejora), o refinar el despacho automático de la cuadrilla a una oferta con confirmación
+  del jugador en vez de automática — ninguna de las dos fue pedida explícitamente, quedan como
+  ideas en `wiki/backlog/pendientes.md` del vault, no como plan activo.
 
 ---
 

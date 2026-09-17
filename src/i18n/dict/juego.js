@@ -10,6 +10,8 @@ export const es = {
   'hud.barrioCorto': 'Barrio',
   'hud.riesgo': 'Riesgo de epidemia',
   'hud.riesgoCorto': 'Riesgo',
+  'hud.reputacion': 'Reputación del barrio',
+  'hud.reputacionCorto': 'Reputación',
   'hud.enRiesgo': '¡El barrio está en riesgo!',
   'hud.brotes': '{n} brotes activos',
   'hud.broteUno': '1 brote activo',
@@ -26,6 +28,11 @@ export const es = {
   'game.sinCriaderos': '¡No quedan criaderos en el barrio!',
   'game.toast.brote': '¡Brote en {zona}! Fumígalo antes de que crezca.',
   'game.toast.riesgo': '¡El barrio está en riesgo! Fumiga los brotes y limpia los criaderos.',
+  'game.toast.hospitalSaturado': 'El hospital llegó a su límite de camas: prevenir es más barato que curar.',
+  'game.toast.hospitalDesaturado': 'El hospital ya tiene camas libres de nuevo.',
+  'game.toast.reputacionBaja': 'El barrio está perdiendo confianza en SEDES: se nota el descuido.',
+  'game.toast.reputacionEnRiesgo': 'La comunidad ya no confía en el trabajo de prevención. ¡Hay que remontarla!',
+  'game.toast.reputacionAlta': '¡El barrio confía en tu trabajo! SEDES está orgulloso del equipo.',
   'game.toast.bonus': 'Bonus por estudiar: +{n}',
   'game.toast.especie': '¡Especie identificada!',
   'game.toast.insignia': '{texto} · Insignia: {insignia}',
@@ -33,7 +40,13 @@ export const es = {
   'game.toast.bibliotecaPronto': 'La Biblioteca SEDES llega pronto: fichas de mosquitos, síntomas y prevención.',
   'game.toast.jornada': 'Jornada de 4 minutos: limpia los criaderos y fumiga los brotes.',
   'game.toast.controles': 'Muévete con WASD o flechas · E acción · V camioneta · C cámara',
-  'game.toast.reporte': 'Reporte enviado a SEDES.',
+  'game.toast.reporte': 'Reporte de campo enviado a SEDES.',
+  'game.toast.reporte2': 'SEDES recibió tu reporte de campo.',
+  'game.toast.reporteCenetrop': 'Muestra enviada a SEDES: se escala a CENETROP para confirmación de laboratorio.',
+  'game.toast.especiesCompletas': '¡Reportaste las 4 especies en esta jornada! Insignia: {insignia}',
+
+  // Biblioteca SEDES: contador de reportes enviados por la cámara IA
+  'lib.reportes': 'Reportes enviados a SEDES: {n}',
 
   // Menú de pausa
   'pausa.titulo': 'Pausa',
@@ -71,6 +84,32 @@ export const es = {
 
   // Brújula
   'compass.metros': '{n} m',
+
+  // Tienda SEDES (v4 §4.2): mejoras permanentes pagadas con Bs
+  'tienda.titulo': 'Tienda SEDES',
+  'tienda.saldo': 'Tus Bs: {n}',
+  'tienda.comprar': 'Comprar',
+  'tienda.yaLaTienes': 'Ya la tienes',
+  'tienda.noAlcanza': 'No te alcanza',
+  'tienda.costo': '{n} Bs',
+  'tienda.comprada': '¡Compra realizada!',
+  'tienda.sinFondos': 'Aún no tienes suficientes Bs',
+  'tienda.mejora.mochila': 'Mochila reforzada',
+  'tienda.mejora.mochila.desc': 'Detecta criaderos, brotes y basura desde más lejos.',
+  'tienda.mejora.fumigacion': 'Fumigación rápida',
+  'tienda.mejora.fumigacion.desc': 'Fumiga los brotes mucho más rápido.',
+  'tienda.mejora.bicicleta': 'Bicicleta',
+  'tienda.mejora.bicicleta.desc': 'Te mueves más rápido por todo el barrio.',
+
+  // Cuadrilla SEDES (v4 §4.3): brigadistas contratables cuando el jugador está desbordado
+  'cuadrilla.nombre': 'Brigadista SEDES',
+  'cuadrilla.ofrecer': 'Hay más brotes de los que puedes cubrir. ¿Llamar a un brigadista de SEDES por {n} Bs?',
+  'cuadrilla.contratar': 'Contratar brigadista',
+  'cuadrilla.costo': '{n} Bs',
+  'cuadrilla.noAlcanza': 'No te alcanza para contratar un brigadista',
+  'cuadrilla.toast.contratado': 'SEDES envió un brigadista a apoyar: recursos limitados, pero refuerzo en camino.',
+  'cuadrilla.toast.llego': 'El brigadista de SEDES llegó al brote y está fumigando.',
+  'cuadrilla.toast.termino': 'El brigadista de SEDES terminó y vuelve a la estación.',
 };
 
 export const en = {
@@ -82,6 +121,8 @@ export const en = {
   'hud.barrioCorto': 'Protected',
   'hud.riesgo': 'Epidemic risk',
   'hud.riesgoCorto': 'Risk',
+  'hud.reputacion': 'Neighborhood reputation',
+  'hud.reputacionCorto': 'Reputation',
   'hud.enRiesgo': 'The neighborhood is at risk!',
   'hud.brotes': '{n} active outbreaks',
   'hud.broteUno': '1 active outbreak',
@@ -97,6 +138,11 @@ export const en = {
   'game.sinCriaderos': 'No breeding sites left in the neighborhood!',
   'game.toast.brote': 'Outbreak in {zona}! Spray it before it grows.',
   'game.toast.riesgo': 'The neighborhood is at risk! Spray the outbreaks and clean the breeding sites.',
+  'game.toast.hospitalSaturado': 'The hospital hit its bed limit: preventing is cheaper than curing.',
+  'game.toast.hospitalDesaturado': 'The hospital has free beds again.',
+  'game.toast.reputacionBaja': 'The neighborhood is losing trust in SEDES: the neglect is showing.',
+  'game.toast.reputacionEnRiesgo': 'The community no longer trusts the prevention work. Time to turn it around!',
+  'game.toast.reputacionAlta': 'The neighborhood trusts your work! SEDES is proud of the team.',
   'game.toast.bonus': 'Study bonus: +{n}',
   'game.toast.especie': 'Species identified!',
   'game.toast.insignia': '{texto} · Badge: {insignia}',
@@ -104,7 +150,13 @@ export const en = {
   'game.toast.bibliotecaPronto': 'The SEDES Library is coming soon: mosquito cards, symptoms and prevention.',
   'game.toast.jornada': '4-minute shift: clean the breeding sites and spray the outbreaks.',
   'game.toast.controles': 'Move with WASD or arrows · E action · V truck · C camera',
-  'game.toast.reporte': 'Report sent to SEDES.',
+  'game.toast.reporte': 'Field report sent to SEDES.',
+  'game.toast.reporte2': 'SEDES received your field report.',
+  'game.toast.reporteCenetrop': 'Sample sent to SEDES: escalated to CENETROP for lab confirmation.',
+  'game.toast.especiesCompletas': 'You reported all 4 species this shift! Badge: {insignia}',
+
+  // SEDES Library: counter of reports sent via the AI camera
+  'lib.reportes': 'Reports sent to SEDES: {n}',
 
   'pausa.titulo': 'Paused',
   'pausa.continuar': 'Continue',
@@ -138,4 +190,30 @@ export const en = {
   'mision.proteger': 'Area 100% protected',
 
   'compass.metros': '{n} m',
+
+  // SEDES Shop (v4 §4.2): permanent upgrades paid with Bs
+  'tienda.titulo': 'SEDES Shop',
+  'tienda.saldo': 'Your Bs: {n}',
+  'tienda.comprar': 'Buy',
+  'tienda.yaLaTienes': 'Already owned',
+  'tienda.noAlcanza': 'Not enough',
+  'tienda.costo': '{n} Bs',
+  'tienda.comprada': 'Purchase complete!',
+  'tienda.sinFondos': 'You don\'t have enough Bs yet',
+  'tienda.mejora.mochila': 'Reinforced backpack',
+  'tienda.mejora.mochila.desc': 'Spot breeding sites, outbreaks and trash from farther away.',
+  'tienda.mejora.fumigacion': 'Quick spraying',
+  'tienda.mejora.fumigacion.desc': 'Spray outbreaks much faster.',
+  'tienda.mejora.bicicleta': 'Bicycle',
+  'tienda.mejora.bicicleta.desc': 'Move faster all around the neighborhood.',
+
+  // SEDES Crew (v4 §4.3): hireable brigade members for when the player is overwhelmed
+  'cuadrilla.nombre': 'SEDES Brigade Member',
+  'cuadrilla.ofrecer': 'There are more outbreaks than you can cover. Call in a SEDES brigade member for {n} Bs?',
+  'cuadrilla.contratar': 'Hire brigade member',
+  'cuadrilla.costo': '{n} Bs',
+  'cuadrilla.noAlcanza': 'Not enough Bs to hire a brigade member',
+  'cuadrilla.toast.contratado': 'SEDES sent a brigade member to help: resources are limited, but backup is on the way.',
+  'cuadrilla.toast.llego': 'The SEDES brigade member reached the outbreak and is spraying it.',
+  'cuadrilla.toast.termino': 'The SEDES brigade member finished and is heading back to the station.',
 };

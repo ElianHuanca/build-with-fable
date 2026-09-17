@@ -9,6 +9,7 @@ import { LevelEndScene } from './scenes/LevelEndScene.js';
 import { PhotoScene } from './scenes/PhotoScene.js';
 import { LibraryScene } from './scenes/LibraryScene.js';
 import { CameraScene } from './scenes/CameraScene.js';
+import { TiendaScene } from './scenes/TiendaScene.js';
 import { PALETTE } from './data/palette.js';
 import { bindGame } from './i18n/index.js';
 
@@ -34,7 +35,7 @@ const game = new Phaser.Game({
   },
   input: { activePointers: 3 },
   // Orden: Boot arranca; Menu → LevelSelect → Game (+HUD, Popup, LevelEnd y Photo en paralelo).
-  scene: [BootScene, MenuScene, LevelSelectScene, GameScene, HUDScene, PopupScene, LevelEndScene, PhotoScene, CameraScene, LibraryScene],
+  scene: [BootScene, MenuScene, LevelSelectScene, GameScene, HUDScene, PopupScene, LevelEndScene, PhotoScene, CameraScene, LibraryScene, TiendaScene],
 });
 
 // i18n: emite game.events 'lang' al cambiar de idioma (setLang).

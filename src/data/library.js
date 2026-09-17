@@ -228,4 +228,10 @@ export const INSIGNIAS = [
     nombre: { es: 'Guardián del barrio', en: 'Neighborhood guardian' }, desc: { es: 'Lee todas las pestañas', en: 'Read every tab' } },
   { id: 'fotografo', icono: 'insignia_fotografo', color: '#e8703a', glifo: 'F',
     nombre: { es: 'Fotógrafo', en: 'Photographer' }, desc: { es: 'Fotografía un mosquito con la cámara IA', en: 'Photograph a mosquito with the AI camera' } },
+  { id: 'detective-de-campo', icono: 'insignia_detective', color: '#8e44ad', glifo: 'V',
+    nombre: { es: 'Vigilante epidemiológico', en: 'Epidemiological watcher' },
+    desc: { es: 'Reporta las 4 especies con la cámara en una sola jornada', en: 'Report all 4 species with the camera in a single shift' } },
+  { id: 'guardian-en-casa', icono: 'insignia_guardian', color: '#5cc23a', glifo: 'H',
+    nombre: { es: 'Guardián en casa', en: 'Guardian at home' },
+    desc: { es: 'Completa el reto familiar de la semana', en: "Complete the week's family challenge" } },
 ];

@@ -34,12 +34,18 @@ export const en = {
   'lib.insignia.guardian.desc': 'Read every card',
   'lib.insignia.fotografo': 'Photographer',
   'lib.insignia.fotografo.desc': 'Photograph a mosquito with the AI camera',
+  'lib.insignia.detective-de-campo': 'Epidemiological watcher',
+  'lib.insignia.detective-de-campo.desc': 'Report all 4 species with the camera in a single shift',
+  'lib.insignia.guardian-en-casa': 'Guardian at home',
+  'lib.insignia.guardian-en-casa.desc': "Complete the week's family challenge",
 
   // AI camera (simulated demo)
   'cam.titulo': 'AI Camera',
   'cam.demo': 'DEMO',
   'cam.consejo': 'Aim at a mosquito and tap the shutter',
   'cam.disparar': 'Shoot',
+  'cam.galeria': 'Gallery',
+  'cam.fotoReal': 'Real photo',
   'cam.analizando': 'Analyzing…',
   'cam.log1': 'Detecting patterns…',
   'cam.log2': 'Comparing against {n} species…',

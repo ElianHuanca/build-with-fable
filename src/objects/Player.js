@@ -29,6 +29,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     // Multiplicador de velocidad al subirse a la camioneta (ver Vehiculo.subir/bajar).
     this.vehiculoFactor = 1;
+    // Mejora "bicicleta" comprada en la Tienda SEDES (v4 §4.2): multiplicador fijo por jornada,
+    // ver SaveSystem.efectoMejora('bicicleta'). Independiente del sprint y de subir al vehículo.
+    this.mejoraFactor = 1;
 
     this.cursors = scene.input.keyboard.createCursorKeys();
     this.wasd = scene.input.keyboard.addKeys('W,A,S,D');
@@ -40,6 +43,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
   /** Multiplicador de velocidad mientras está montado en la camioneta (1 = a pie). */
   setVehiculoFactor(f) { this.vehiculoFactor = f; }
+
+  setMejoraFactor(f) { this.mejoraFactor = f; }
 
   /** ¿Está corriendo ahora mismo (hay petición y queda energía)? */
   get corriendo() { return this._corriendo; }
@@ -70,7 +75,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     } else {
       this.energia = Math.min(1, this.energia + dt / SPRINT_RECARGA_MS);
     }
-    const speed = SPEED * (this._corriendo ? SPRINT_FACTOR : 1) * this.vehiculoFactor;
+    const speed = SPEED * (this._corriendo ? SPRINT_FACTOR : 1) * this.vehiculoFactor * this.mejoraFactor;
     this.setVelocity(v.x * speed, v.y * speed);
 
     if (moviendo) {

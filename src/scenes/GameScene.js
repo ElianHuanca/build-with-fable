@@ -14,6 +14,9 @@ import { MissionManager } from '../systems/MissionManager.js';
 import { OutbreakManager, MAX_ACTIVOS as MAX_BROTES_ACTIVOS } from '../systems/OutbreakManager.js';
 import { Vecinos } from '../systems/Vecinos.js';
 import { EpidemicMeter } from '../systems/EpidemicMeter.js';
+import { Reputacion } from '../systems/Reputacion.js';
+import { Economia } from '../systems/Economia.js';
+import { Cuadrilla } from '../systems/Cuadrilla.js';
 import { Minimap } from '../systems/Minimap.js';
 import { Compass } from '../systems/Compass.js';
 import { AlertToast } from '../systems/AlertToast.js';
@@ -68,9 +71,12 @@ const UMBRAL_RIESGO = 60;
 const PUNTOS_BROTE = { pequeno: 75, medio: 90, grande: 100 };
 /** Dónde nace la camioneta si el nivel no trae `garaje`: junto a la estación, sobre la calle. */
 const GARAJE_OFFSET = { x: 96, y: 56 };
-/** Dónde nace el hospital (plan v4 §6, groundwork): offset fijo desde la estación, sin superponerse
- * con ella ni con la camioneta (GARAJE_OFFSET). */
-const HOSPITAL_OFFSET = { x: -110, y: 40 };
+/** Hospital (plan v4 §6): distancia mínima a la estación y a cualquier objeto sólido, y margen
+ * respecto del borde del mapa, al elegir dónde nace (ver `elegirPosicionHospital`). */
+const HOSPITAL_DIST_MIN_ESTACION = 420;
+const HOSPITAL_DIST_MIN_SOLIDO = 80;
+const HOSPITAL_MARGEN_BORDE = 100;
+const HOSPITAL_INTENTOS = 40;
 /** Velocidad mínima (px/s) para que suene el motor de la camioneta. */
 const MOTOR_MIN_SPEED = 5;
 
@@ -113,11 +119,17 @@ export class GameScene extends Phaser.Scene {
     const data = this.levelData;
     const level = buildLevel(this, data);
     this.zones = level.zones;
+    // Objetos sólidos del nivel (casas, árboles, muros): los usan tanto OutbreakManager (brotes)
+    // como la ubicación del hospital, para no nacer encima de nada.
+    const solidos = (data.objects || []).filter((o) => OBJECT_DEFS[o.type]?.solid);
 
     this.physics.world.setBounds(0, 0, level.widthPx, level.heightPx);
     this.nivelW = level.widthPx; this.nivelH = level.heightPx;
     this.player = new Player(this, level.spawn.x, level.spawn.y);
     this.physics.add.collider(this.player, level.solids);
+    // Mejora "bicicleta" de la Tienda SEDES (v4 §4.2): multiplicador fijo de velocidad a pie,
+    // comprado una vez y persistente entre jornadas (ver SaveSystem.efectoMejora).
+    this.player.setMejoraFactor(saveSystem.efectoMejora('bicicleta'));
 
     // Los límites definitivos (con margen) se fijan en aplicarMargenCamara, tras el zoom.
     this.cameras.main.setBounds(0, 0, level.widthPx, level.heightPx).startFollow(this.player, true, 0.12, 0.12);
@@ -141,9 +153,14 @@ export class GameScene extends Phaser.Scene {
     // La camioneta se estaciona al lado del edificio (no encima: el edificio la taparía).
     const puntoGaraje = data.garaje || { x: puntoEstacion.x + GARAJE_OFFSET.x, y: puntoEstacion.y + GARAJE_OFFSET.y };
     this.vehiculo = new Vehiculo(this, puntoGaraje.x, puntoGaraje.y);
-    // Hospital (plan v4 §6, groundwork): edificio fijo cerca de la estación, con noción simple de
-    // capacidad/saturación (ver Hospital.actualizar en update()).
-    this.hospital = new Hospital(this, puntoEstacion.x + HOSPITAL_OFFSET.x, puntoEstacion.y + HOSPITAL_OFFSET.y);
+    // Hospital (plan v4 §6): edificio fijo en OTRA parte del barrio (no junto a la estación — es
+    // una institución aparte), con capacidad/saturación (ver Hospital.actualizar en update()).
+    const puntoHospital = data.hospital
+      || this.elegirPosicionHospital({ x: 0, y: 0, w: level.widthPx, h: level.heightPx }, puntoEstacion, solidos);
+    this.hospital = new Hospital(this, puntoHospital.x, puntoHospital.y);
+    // Cuadrilla contratada (plan v4 §4.3): brigadistas de SEDES que salen desde la estación.
+    this.cuadrilla = new Cuadrilla(this, { origen: puntoEstacion });
+    this._cooldownCuadrillaMs = 0;
     this.enVehiculo = false;
     this.motorOn = false;
     this.fumigando = null;   // brote que se está fumigando (mantener E)
@@ -186,7 +203,7 @@ export class GameScene extends Phaser.Scene {
     this.outbreakManager = new OutbreakManager(this, {
       criaderos: this.criaderos,
       bounds: { x: 0, y: 0, w: level.widthPx, h: level.heightPx },
-      solidos: (data.objects || []).filter((o) => OBJECT_DEFS[o.type]?.solid),
+      solidos,
       jornadaMs: JORNADA_SEG * 1000,
     });
     // Ciclo día/noche (v4): aviso corto al cambiar de franja horaria, con el tip que explica
@@ -204,6 +221,20 @@ export class GameScene extends Phaser.Scene {
     });
     this.epidemicMeter = new EpidemicMeter();
     this.superoUmbral = false;
+
+    // Reputación del barrio (plan v4 §6b): capa de consecuencia narrativa aparte del medidor de
+    // epidemia, ver JSDoc de Reputacion.js. Se conecta al registry para que HUDScene la lea igual
+    // que 'epidemia'/'progreso', sin importar la clase.
+    this.reputacion = new Reputacion().vincularRegistry(this.registry);
+    this.reputacion.on('enRiesgo', () => this.alertToast.mostrar(t('game.toast.reputacionEnRiesgo'), 4000));
+    this.reputacion.on('confianzaAlta', () => this.alertToast.mostrar(t('game.toast.reputacionAlta'), 3500));
+    this._ultimoTickReputacionSeg = 0;
+
+    // Economía del Agente (plan v4 §1/§4): Bs ganados esta jornada (ver Economia.js); el saldo
+    // persistente vive en SaveSystem y solo se actualiza una vez, al cerrar la jornada
+    // (depositarEnBilletera() en finDeNivel), para que nunca se pueda gastar en la Tienda un Bs
+    // de una jornada que todavía no terminó.
+    this.economia = new Economia();
 
     // Mundo vivo (plan v4 §2): vecinos que caminan cerca de las casas y de vez en cuando botan
     // basura; la basura madura sola (Basura.js) hasta convertirse en un brote real si nadie la
@@ -234,9 +265,22 @@ export class GameScene extends Phaser.Scene {
     this.compass = new Compass(this);
     this.alertToast = new AlertToast(this);
 
+    // Consecuencia visible de la saturación del hospital (plan v4 §6): un aviso, no un fin de juego.
+    this.hospital.on('saturado', () => {
+      this.alertToast.mostrar(t('game.toast.hospitalSaturado'), 4500);
+      this.reputacion.registrarHospitalSaturado();
+    });
+    this.hospital.on('desaturado', () => {
+      this.alertToast.mostrar(t('game.toast.hospitalDesaturado'), 3000);
+      this.reputacion.registrarHospitalDesaturado();
+    });
+    this.cuadrilla.on('llegó', () => this.alertToast.mostrar(t('cuadrilla.toast.llego'), 3000));
+    this.cuadrilla.on('terminó', () => this.alertToast.mostrar(t('cuadrilla.toast.termino'), 3000));
+
     this.registry.set('puntos', 0);
     this.registry.set('estrellas', 0);
     this.registry.set('limpios', 0);
+    this.registry.set('especiesReportadasJornada', []);
     this.registry.set('total', this.total);
     this.registry.set('progreso', 0);
     this.registry.set('zona', '');
@@ -378,11 +422,24 @@ export class GameScene extends Phaser.Scene {
     this.hospital.actualizar(this.epidemicMeter.valor);
     const epidemiaEntera = Math.round(this.epidemicMeter.valor);
     if (epidemiaEntera !== this.registry.get('epidemia')) this.registry.set('epidemia', epidemiaEntera);
+    this.reputacion.tick(this.game.loop.delta, {
+      epidemiaValor: this.epidemicMeter.valor,
+      criaderosSucios: Math.max(0, this.total - this.limpios),
+    });
+    // consumirRiesgo es más caro (recorre vecinos) y no necesita granularidad de frame: una vez/seg.
+    this._ultimoTickReputacionSeg += this.game.loop.delta;
+    if (this._ultimoTickReputacionSeg >= 1000) {
+      this._ultimoTickReputacionSeg = 0;
+      this.vecinos.consumirRiesgo(this.epidemicMeter.valor, this.hospital);
+    }
     if (this.epidemicMeter.valor >= UMBRAL_RIESGO && !this.superoUmbral) {
       this.superoUmbral = true;
       this.alertToast.mostrar(t('game.toast.riesgo'), 4000);
     }
     if (this.epidemicMeter.valor >= 100) { this.finDeNivel('epidemia'); return; }
+
+    this.cuadrilla.update(this.game.loop.delta);
+    this.actualizarCuadrilla(restante);
 
     this.actualizarDeteccion();
     this.actualizarEstacionTip();
@@ -598,6 +655,43 @@ export class GameScene extends Phaser.Scene {
     this.pausa.abrir();
   }
 
+  /**
+   * Elige dónde nace el hospital (plan v4 §6): lejos de la estación (es otra institución, no debe
+   * quedar pegada) y de cualquier objeto sólido, dentro del mapa. Mismo criterio de "intentos al
+   * azar + descartar si está muy cerca de algo" que ya usa `OutbreakManager.elegirPosicion()` para
+   * los brotes, adaptado acá con una distancia mínima a la estación en vez de una preferencia por
+   * los criaderos.
+   */
+  elegirPosicionHospital(bounds, estacion, solidos) {
+    const { x, y, w, h } = bounds;
+    let mejor = null, mejorDist = -1;
+    for (let i = 0; i < HOSPITAL_INTENTOS; i++) {
+      const p = {
+        x: Phaser.Math.FloatBetween(x + HOSPITAL_MARGEN_BORDE, x + w - HOSPITAL_MARGEN_BORDE),
+        y: Phaser.Math.FloatBetween(y + HOSPITAL_MARGEN_BORDE, y + h - HOSPITAL_MARGEN_BORDE),
+      };
+      const distEstacion = Phaser.Math.Distance.Between(p.x, p.y, estacion.x, estacion.y);
+      if (distEstacion < HOSPITAL_DIST_MIN_ESTACION) continue;
+      const lejosDeSolidos = solidos.every((s) => Phaser.Math.Distance.Between(p.x, p.y, s.x, s.y) >= HOSPITAL_DIST_MIN_SOLIDO);
+      if (!lejosDeSolidos) continue;
+      // Entre los candidatos válidos, preferir el más lejano a la estación (más "otro barrio").
+      if (distEstacion > mejorDist) { mejorDist = distEstacion; mejor = p; }
+    }
+    // Si ningún intento cumplió las dos condiciones a la vez, usar el más lejano a la estación
+    // aunque roce algún sólido — mejor un hospital algo apretado que ninguno.
+    if (mejor) return mejor;
+    let fallback = null, fallbackDist = -1;
+    for (let i = 0; i < HOSPITAL_INTENTOS; i++) {
+      const p = {
+        x: Phaser.Math.FloatBetween(x + HOSPITAL_MARGEN_BORDE, x + w - HOSPITAL_MARGEN_BORDE),
+        y: Phaser.Math.FloatBetween(y + HOSPITAL_MARGEN_BORDE, y + h - HOSPITAL_MARGEN_BORDE),
+      };
+      const d = Phaser.Math.Distance.Between(p.x, p.y, estacion.x, estacion.y);
+      if (d > fallbackDist) { fallbackDist = d; fallback = p; }
+    }
+    return fallback || { x: estacion.x, y: estacion.y };
+  }
+
   /** Criadero no limpio más cercano al jugador (sin límite de distancia) o null. */
   criaderoMasCercano() {
     const { x, y } = this.player.body.center;
@@ -608,6 +702,35 @@ export class GameScene extends Phaser.Scene {
       if (d < best) { best = d; nearest = c; }
     }
     return nearest;
+  }
+
+  /**
+   * Cuadrilla contratada (plan v4 §4.3): cuando el jugador está objetivamente desbordado — al
+   * tope de brotes activos Y (le queda poco tiempo de jornada O ninguno le queda cerca) — y su
+   * saldo alcanza, SEDES manda un brigadista automáticamente (con su costo real en Bs, ver
+   * Cuadrilla.js) a fumigar el brote 'activo' más lejano al jugador (el que menos probable es que
+   * el jugador llegue a cubrir a tiempo). Con su propio cooldown para no repetirse todo el rato.
+   */
+  actualizarCuadrilla(restanteSeg) {
+    this._cooldownCuadrillaMs = Math.max(0, this._cooldownCuadrillaMs - this.game.loop.delta);
+    if (this._cooldownCuadrillaMs > 0) return;
+    const activos = this.outbreakManager.activos.filter((b) => b.state === 'activo');
+    if (activos.length < MAX_BROTES_ACTIVOS) return;
+    const { x, y } = this.player.body.center;
+    let objetivo = null, distMax = -1;
+    for (const b of activos) {
+      const d = Phaser.Math.Distance.Between(x, y, b.x, b.y);
+      if (d > distMax) { distMax = d; objetivo = b; }
+    }
+    const pocoTiempo = restanteSeg < 60;
+    const lejosDeTodos = distMax > 250;
+    if (!objetivo || !(pocoTiempo || lejosDeTodos)) return;
+    this._cooldownCuadrillaMs = 25000;
+    if (!this.cuadrilla.puedeContratar()) return;
+    const { ok } = this.cuadrilla.contratar(objetivo);
+    if (ok) {
+      this.alertToast.mostrar(t('cuadrilla.toast.contratado'), 4000);
+    }
   }
 
   /** Brote activo (no fumigado) más cercano al jugador, sin límite de distancia, o null. */
@@ -755,6 +878,7 @@ export class GameScene extends Phaser.Scene {
       const puntos = tarde ? PUNTOS_BASURA_TARDE : PUNTOS_BASURA;
       this.sumarPuntos(puntos);
       this.textoFlotante(b.x, b.y - 20, t('game.mas', { n: puntos }), PALETTE.amarillo);
+      this.economia.registrarBasuraRecogida(tarde);
     });
     b.on('maduro', () => {
       this.basuras = this.basuras.filter((k) => k !== b);
@@ -833,6 +957,8 @@ export class GameScene extends Phaser.Scene {
       this.registry.set('progreso', this.score.progreso(this.limpios, this.total));
       this.missions.onCriaderoLimpio(c);
       this.epidemicMeter.registrarLimpieza();
+      this.reputacion.registrarLimpieza();
+      this.economia.registrarLimpieza();
       this.scene.get('HUD')?.flashPuntos?.();
       const fact = factsL()[c.type];
       if (fact) console.log(`[Dengue] ${fact.nombre}: ${fact.dato} (${fact.fuente})`);
@@ -876,6 +1002,8 @@ export class GameScene extends Phaser.Scene {
           this.sumarPuntos(puntos);
           this.textoFlotante(b.x, b.y - 24, t('game.mas', { n: puntos }), PALETTE.amarillo);
           this.epidemicMeter.registrarFumigado(nivel);
+          if (nivel === 'pequeno') this.reputacion.registrarFumigadoPronto();
+          this.economia.registrarFumigado(nivel);
           this.mostrarTip('fumigar');
         }
         this.player.bloqueado = false;
@@ -940,10 +1068,18 @@ export class GameScene extends Phaser.Scene {
     this.compass?.flecha?.setVisible(false);
     (this.flotantes || []).forEach((t) => t.active && t.destroy());
     saveSystem.guardarNivel(this.levelId, { estrellas, tiempo, puntos: this.score.puntos });
+    // Bono de SEDES (plan v4 §1) según % de barrio protegido, y volcado del total ganado hoy al
+    // saldo persistente — una sola vez, acá, nunca a mitad de jornada (ver JSDoc de Economia.js).
+    const pctProtegido = this.total > 0 ? this.limpios / this.total : 0;
+    const bono = this.economia.aplicarBonoJornada(pctProtegido);
+    const bsGanados = this.economia.totalGanadoJornada();
+    const bsSaldo = this.economia.depositarEnBilletera();
     AudioManager.stopMusic();
     this.resultado = {
       puntos: this.score.puntos, limpios: this.limpios, total: this.total, tiempo, estrellas,
       nivelId: this.levelId, nivelNombre: this.level?.nombre || '', resultado,
+      reputacion: Math.round(this.reputacion.valorActual()),
+      bsGanados, bsBono: bono, bsSaldo,
     };
     // El HUD ya no aporta en el resumen: se duerme para no tapar la pantalla de fin de nivel.
     this.scene.sleep('HUD');

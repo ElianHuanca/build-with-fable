@@ -5,12 +5,16 @@ import { Layout } from '../systems/Layout.js';
 import { CameraFX, mulberry } from '../systems/CameraFX.js';
 import { SPECIES, speciesById, especieAleatoria, especieSegunHorario } from '../data/species.js';
 import { t, tx, txList } from '../i18n/index.js';
+import { Badges } from '../systems/Badges.js';
+import { INSIGNIAS } from '../data/library.js';
 
 const FONT = 'Arial, sans-serif';
 const ROJO = '#e74c3c';
 const SNAP = 256;
 const ALBUM_KEY = 'dengue.album';
 const ANALISIS_MS = 2200;
+const REGISTRY_ESPECIES_JORNADA = 'especiesReportadasJornada';
+const BADGE_DETECTIVE_CAMPO = 'detective-de-campo';
 
 /**
  * Cámara con IA (demo simulada, v3 §1.2).
@@ -41,6 +45,8 @@ export class CameraScene extends Phaser.Scene {
     this.especie = null;
     this.confianza = 0;
     this.seed = 1;
+    this.snapKeyReal = null; // textura propia (foto real) si el jugador usó cámara/galería, para poder liberarla
+    this.inputsReales = [];
   }
 
   sfx(name) { this.game.events.emit('sfx', name); }
@@ -51,6 +57,55 @@ export class CameraScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-ESC', () => this.close());
     this.input.keyboard?.on('keydown-SPACE', () => { if (this.fase === 'visor') this.disparar(); });
     this.input.keyboard?.on('keydown-ENTER', () => { if (this.fase === 'visor') this.disparar(); });
+    this.events.once('shutdown', () => {
+      this.inputsReales.forEach((i) => i.remove());
+      if (this.snapKeyReal && this.textures.exists(this.snapKeyReal)) this.textures.remove(this.snapKeyReal);
+    });
+  }
+
+  /**
+   * Alternativa a "apuntar" dentro del juego (plan v4): usar una foto REAL de un mosquito o
+   * criadero, tomada con la cámara del dispositivo o elegida de la galería, en vez de la vista
+   * simulada del juego. La identificación sigue siendo la misma simulación de siempre (no hay
+   * análisis real de imagen) — ver JSDoc de la clase — solo cambia de dónde sale la "foto".
+   * `camara=true` sugiere al navegador abrir la cámara trasera (atributo `capture`, se degrada a
+   * un selector de archivos normal en escritorio).
+   */
+  elegirFotoReal(camara) {
+    if (this.busy || this.fase !== 'visor') return;
+    this.sfx('click');
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    if (camara) input.capture = 'environment';
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+    document.body.appendChild(input);
+    this.inputsReales.push(input);
+    input.addEventListener('change', () => {
+      const file = input.files?.[0];
+      if (file) this.cargarFotoReal(file);
+      input.remove();
+      this.inputsReales = this.inputsReales.filter((i) => i !== input);
+    });
+    input.click();
+  }
+
+  /** Carga el archivo elegido como textura y dispara el análisis igual que con la vista simulada. */
+  cargarFotoReal(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const key = `cam_foto_real_${Date.now()}`;
+      const anterior = this.snapKeyReal;
+      this.textures.once('addtexture-' + key, () => {
+        if (anterior && this.textures.exists(anterior)) this.textures.remove(anterior);
+        this.snapKeyReal = key;
+        this.snapKey = key;
+        this.disparar();
+      });
+      this.textures.addBase64(key, reader.result);
+    };
+    reader.readAsDataURL(file);
   }
 
   // ---------------------------------------------------------------- muestra de respaldo
@@ -254,6 +309,37 @@ export class CameraScene extends Phaser.Scene {
     this.root.add(this.add.text(W / 2, sy - R - 14, t('cam.disparar'), {
       fontFamily: FONT, fontSize: 12, color: PALETTE.grisClaro,
     }).setOrigin(0.5, 1));
+
+    // Alternativa a apuntar dentro del juego (v4): foto real con la cámara del dispositivo o de
+    // la galería, más chicos que el disparador principal, a los costados (mismo lugar que un
+    // botón de "cambiar cámara"/"galería" en una app de cámara real).
+    const off = Math.min(R * 2.1, (W - geo.safe.left - geo.safe.right) / 2 - 30);
+    this.root.add(this.miniBoton(W / 2 - off, sy, '🖼', t('cam.galeria'), () => this.elegirFotoReal(false)));
+    this.root.add(this.miniBoton(W / 2 + off, sy, '📷', t('cam.fotoReal'), () => this.elegirFotoReal(true)));
+  }
+
+  /** Botón chico circular con un emoji + etiqueta debajo, para las alternativas de foto real. */
+  miniBoton(x, y, emoji, label, cb) {
+    const r = 24;
+    const c = this.add.container(x, y);
+    const g = this.add.graphics();
+    const draw = (col) => {
+      g.clear();
+      g.fillStyle(0x000000, 0.3).fillCircle(0, 3, r + 3);
+      g.fillStyle(col, 0.9).fillCircle(0, 0, r);
+      g.lineStyle(2, 0xffffff, 0.8).strokeCircle(0, 0, r);
+    };
+    draw(0x1a2430);
+    const icon = this.add.text(0, 0, emoji, { fontSize: 22 }).setOrigin(0.5);
+    c.add([g, icon]).setSize(...touchSize(r * 2 + 12, r * 2 + 12)).setInteractive({ useHandCursor: true })
+      .on('pointerover', () => draw(hex(PALETTE.azulGorra)))
+      .on('pointerout', () => draw(0x1a2430))
+      .on('pointerdown', cb);
+    const tag = this.add.text(x, y + r + 10, label, {
+      fontFamily: FONT, fontSize: 11, fontStyle: 'bold', color: PALETTE.grisClaro,
+    }).setOrigin(0.5, 0);
+    const wrap = this.add.container(0, 0, [c, tag]);
+    return wrap;
   }
 
   disparar() {
@@ -505,6 +591,64 @@ export class CameraScene extends Phaser.Scene {
       this.status.setText(nueva ? t('cam.nueva') : t('cam.yaEstaba')).setAlpha(0);
       this.tweens.add({ targets: this.status, alpha: 1, duration: 200 });
     }
+    this.registrarReporte();
+  }
+
+  /**
+   * Cada identificación confirmada cuenta como un reporte de campo a SEDES (v4): incrementa
+   * el contador compartido 'reportesEnviados' (registry global, visible en la Biblioteca) y
+   * muestra un aviso propio de la escena. Cada 4ª muestra (dentro del rango 3ª-5ª pedido) se
+   * enmarca como escalada a CENETROP para confirmación de laboratorio, sin implicar que el
+   * jugador visita CENETROP: es la institución que recibe la muestra, no un lugar del mapa.
+   */
+  registrarReporte() {
+    const n = (this.registry.get('reportesEnviados') || 0) + 1;
+    this.registry.set('reportesEnviados', n);
+    const key = n % 4 === 0 ? 'game.toast.reporteCenetrop' : (n % 2 === 0 ? 'game.toast.reporte2' : 'game.toast.reporte');
+    this.mostrarToastReporte(t(key));
+    this.registrarEspecieJornada();
+  }
+
+  /**
+   * Insignia "Vigilante epidemiológico" (v4 §5, "El explorador"): reportar con la cámara las 4
+   * especies dentro de la misma jornada. Se rastrea aparte del álbum (que es histórico/entre
+   * jornadas) en el registro 'especiesReportadasJornada', reiniciado a [] por GameScene al
+   * empezar cada jornada junto a 'puntos'/'estrellas'/etc. Se defiende con `|| []` por si esa
+   * clave todavía no existe (p. ej. al lanzar esta escena de forma aislada).
+   */
+  registrarEspecieJornada() {
+    if (!this.especie) return;
+    const previas = this.registry.get(REGISTRY_ESPECIES_JORNADA) || [];
+    const yaCompleto = SPECIES.every((s) => previas.includes(s.id));
+    const set = new Set(previas);
+    set.add(this.especie.id);
+    this.registry.set(REGISTRY_ESPECIES_JORNADA, [...set]);
+    if (yaCompleto) return; // ya se celebró antes en esta jornada, no repetir
+    const ahoraCompleto = SPECIES.every((s) => set.has(s.id));
+    if (ahoraCompleto && Badges.otorgar(BADGE_DETECTIVE_CAMPO)) {
+      const def = INSIGNIAS.find((b) => b.id === BADGE_DETECTIVE_CAMPO);
+      const nombre = def ? tx(def.nombre) : t(`lib.insignia.${BADGE_DETECTIVE_CAMPO}`);
+      this.time.delayedCall(2600, () => { if (!this.done) this.mostrarToastReporte(t('game.toast.especiesCompletas', { insignia: nombre })); });
+    }
+  }
+
+  /** Aviso propio de la Cámara (no depende de GameScene.alertToast): panel arriba, con fundido. */
+  mostrarToastReporte(texto) {
+    const W = this.scale.width;
+    const tc = this.add.container(W / 2, this.geo?.safe?.top ? this.geo.safe.top + 70 : 70).setDepth(200);
+    const txt = this.add.text(0, 0, texto, {
+      fontFamily: FONT, fontSize: 14, fontStyle: 'bold', color: PALETTE.blanco, align: 'center',
+      wordWrap: { width: Math.min(W - 60, 420) },
+    }).setOrigin(0.5);
+    const w = txt.width + 36, h = txt.height + 20;
+    const g = this.add.graphics();
+    g.fillStyle(0x000000, 0.3).fillRoundedRect(-w / 2 + 3, -h / 2 + 4, w, h, 12);
+    g.fillStyle(hex(PALETTE.marino), 0.96).fillRoundedRect(-w / 2, -h / 2, w, h, 12);
+    g.lineStyle(3, hex(PALETTE.celeste), 1).strokeRoundedRect(-w / 2, -h / 2, w, h, 12);
+    tc.add([g, txt]);
+    tc.setScale(0.7).setAlpha(0);
+    this.tweens.add({ targets: tc, scale: 1, alpha: 1, duration: 220, ease: 'Back.easeOut' });
+    this.tweens.add({ targets: tc, alpha: 0, y: tc.y - 12, delay: 2200, duration: 300, onComplete: () => tc.destroy() });
   }
 
   close() {

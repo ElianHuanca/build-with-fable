@@ -83,6 +83,16 @@ export class LibraryScene extends Phaser.Scene {
     const onLang = () => this.layout(this.scale.width, this.scale.height);
     this.game.events.on('lang', onLang);
     this.events.once('shutdown', () => this.game.events.off('lang', onLang));
+
+    // Contador de reportes a SEDES (cámara IA): registry global, se actualiza aunque la
+    // Biblioteca ya esté abierta.
+    this.onReportes = (parent, key) => { if (key === 'reportesEnviados') this.actualizarReportes(); };
+    this.registry.events.on('setdata', this.onReportes);
+    this.registry.events.on('changedata', this.onReportes);
+    this.events.once('shutdown', () => {
+      this.registry.events.off('setdata', this.onReportes);
+      this.registry.events.off('changedata', this.onReportes);
+    });
   }
 
   // ───────────────────────────── layout ─────────────────────────────
@@ -122,14 +132,19 @@ export class LibraryScene extends Phaser.Scene {
       x: W - safe.right - 24, y: HEAD / 2, w: 44, h: 40, label: '✕', fontSize: 20,
       color: PALETTE.teja, colorHover: PALETTE.tejaOscura, radius: 12, onClick: () => this.cerrar(),
     }));
+    // Tienda SEDES (plan v4 §4.2): botón chico junto al cierre, abre TiendaScene por encima.
+    root.add(makeButton(this, {
+      x: W - safe.right - 24 - 44 - 8, y: HEAD / 2, w: 76, h: 40, label: t('tienda.titulo'), fontSize: 13,
+      color: PALETTE.verde, colorHover: PALETTE.verdeOscuro, radius: 12, onClick: () => this.scene.launch('Tienda'),
+    }));
 
     // Pestañas
     const TAB_Y = HEAD + 10;
     const TAB_H = 50;
     root.add(this.drawTabs(W, TAB_Y, TAB_H, safe));
 
-    // Pie: flechas + progreso + insignias
-    const FOOT_H = portrait ? 126 : 114;
+    // Pie: flechas + progreso + reportes SEDES + insignias
+    const FOOT_H = portrait ? 144 : 130;
     const footTop = H - safe.bottom - FOOT_H;
     root.add(this.drawFooter(W, footTop, FOOT_H, portrait));
 
@@ -265,6 +280,14 @@ export class LibraryScene extends Phaser.Scene {
       c.add(this.drawArrow(cx + 120, progY + 8, 1, 56, 44));
     }
 
+    // Reportes enviados a SEDES (cámara IA): contador acumulado de la sesión, en su propia
+    // fila bajo el progreso/flechas (el pie tiene FOOT_H extra para esto).
+    this.reportesText = this.add.text(cx, progY + (portrait ? 40 : 26), '', {
+      fontFamily: FONT, fontSize: 12, fontStyle: 'bold', color: PALETTE.verdeOscuro,
+    }).setOrigin(0.5);
+    c.add(this.reportesText);
+    this.actualizarReportes();
+
     // Insignias
     const badgeY = top + h - 30;
     const r = 19;
@@ -332,6 +355,13 @@ export class LibraryScene extends Phaser.Scene {
       stroke: ganada ? PALETTE.linea : undefined, strokeThickness: ganada ? 3 : 0,
     }).setOrigin(0.5));
     return c;
+  }
+
+  /** Refresca el contador de reportes a SEDES (0 si aún no se identificó ninguna especie). */
+  actualizarReportes() {
+    if (!this.reportesText?.active) return;
+    const n = this.registry.get('reportesEnviados') || 0;
+    this.reportesText.setText(t('lib.reportes', { n }));
   }
 
   actualizarProgreso() {

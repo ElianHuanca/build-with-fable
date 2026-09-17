@@ -7,6 +7,8 @@ import * as Quiz from '../data/quiz.js';
 import * as Levels from '../data/levels.js';
 import * as Tips from '../data/tips.js';
 import { t, tx, getLang } from '../i18n/index.js';
+import { saveSystem } from '../systems/SaveSystem.js';
+import { Badges } from '../systems/Badges.js';
 
 const FONT = 'Arial, sans-serif';
 /** Ancho de referencia de la maqueta; todo se arma a esta escala y luego se achica para caber. */
@@ -63,8 +65,16 @@ function nombreDeNivel(id, fallback) {
 }
 
 /**
- * Pantalla de fin de jornada: cinta según el resultado, estrellas, resumen, bocadillo,
- * "Aprendiste hoy" (3 datos de facts.js) y una pregunta de quiz.js con bonus visual +100.
+ * Pantalla de fin de jornada, dividida en PASOS (uno por pantalla, con su propio botón
+ * "Continuar") en vez de todo apilado en un solo scroll largo — antes tenía cinta + estrellas +
+ * resumen + bocadillo + "Aprendiste hoy" + quiz + reto familiar todo junto, y quedaba sobrecargado
+ * (reporte del usuario 2026-09-16, con captura). Pasos (`this.pasos`, calculado en `init()`):
+ *   1. 'resultado': cinta, nombre del nivel, estrellas, barra de celebración, panel de puntos/
+ *      criaderos/tiempo/reputación, bocadillo + retrato.
+ *   2. 'aprendiste': "Lo que aprendiste hoy" (3 datos de facts.js) + pregunta de quiz.js.
+ *   3. 'reto' (solo si `resultado !== 'epidemia'`): reto familiar de la semana.
+ * Solo el último paso muestra los botones de salida (Reintentar/Foto/Continuar); los demás
+ * muestran un único botón "Continuar" que avanza al siguiente. Ver `avanzarPaso()`.
  * scene.launch('LevelEnd', { puntos, limpios, total, tiempo, estrellas, nivelId, nivelNombre, resultado })
  * `resultado`: 'completo' | 'tiempo' | 'epidemia' (default 'completo', para no romper el flujo de v1).
  * Emite en 'Game': 'sfx' ('win', 'points', 'click'), 'nivel:continuar', 'nivel:foto',
@@ -83,6 +93,7 @@ export class LevelEndScene extends Phaser.Scene {
       nivelId: data.nivelId ?? null,
       nivelNombre: data.nivelNombre ?? '',
       resultado: RESULTADOS[data.resultado] ? data.resultado : 'completo',
+      reputacion: data.reputacion ?? null,
     };
     this.done = false;
     // Bonus del quiz: solo visual/local a esta pantalla, no toca SaveSystem ni el registry.
@@ -93,6 +104,12 @@ export class LevelEndScene extends Phaser.Scene {
     this.respuestaIndex = null;
     this.laidOutOnce = false;
     this.timers = [];
+
+    // Pasos de esta pantalla (ver JSDoc de la clase): 'reto' se omite si la jornada terminó en
+    // epidemia, mismo criterio que ya usaba el panel de reto familiar antes de paginarse.
+    this.pasos = ['resultado', 'aprendiste'];
+    if (this.data_.resultado !== 'epidemia') this.pasos.push('reto');
+    this.pasoActual = 0;
   }
 
   sfx(name) { this.scene.get('Game')?.events.emit('sfx', name); }
@@ -135,7 +152,78 @@ export class LevelEndScene extends Phaser.Scene {
     this.content = content;
     root.add(content);
 
+    const anchoTexto = 460;
     let y = 20;
+    const pasoId = this.pasos[this.pasoActual];
+
+    if (pasoId === 'resultado') {
+      y = this.construirPasoResultado(content, y, d, cfg, primeraVez);
+    } else if (pasoId === 'aprendiste') {
+      y = this.construirPasoAprendiste(content, y, anchoTexto);
+    } else if (pasoId === 'reto') {
+      this.retoFilas = null;
+      this.retoMsg = null;
+      y = this.crearRetoFamiliar(y, anchoTexto);
+    }
+
+    // Indicador de paso ("Paso 2 de 3"): solo si hay más de un paso.
+    if (this.pasos.length > 1) {
+      content.add(this.add.text(0, y + 6, t('end.paso', { n: this.pasoActual + 1, total: this.pasos.length }), {
+        fontFamily: FONT, fontSize: 13, fontStyle: 'bold', color: PALETTE.celeste,
+      }).setOrigin(0.5, 0));
+      y += 30;
+    }
+
+    // Botones: en los pasos intermedios, un único "Siguiente"; en el último, los de salida
+    // ("Intentar de nuevo" solo si la jornada no terminó completa: epidemia o tiempo).
+    const esUltimoPaso = this.pasoActual === this.pasos.length - 1;
+    let btnY = y + 22;
+    if (esUltimoPaso) {
+      if (d.resultado !== 'completo') {
+        content.add(this.makeButton(0, btnY, 300, 52, t('end.reintentar'), PALETTE.teja, PALETTE.tejaOscura, 20, () => this.finish('nivel:reintentar')));
+        btnY += 66;
+      }
+      content.add(this.makeButton(100, btnY, 230, 56, t('end.continuar'), PALETTE.verde, PALETTE.verdeOscuro, 22, () => this.finish('nivel:continuar')));
+      content.add(this.makeButton(-125, btnY, 190, 52, t('end.foto'), PALETTE.grisClaro, PALETTE.gris, 18, () => this.finish('nivel:foto')));
+    } else {
+      content.add(this.makeButton(0, btnY, 230, 56, t('end.siguiente'), PALETTE.verde, PALETTE.verdeOscuro, 22, () => this.avanzarPaso()));
+    }
+    const contentH = btnY + 30;
+
+    // Escala todo para que quepa en el lienzo, en vez de reflujar cada sección por separado.
+    const safe = Layout.safe(this);
+    const availW = Math.max(240, W - safe.left - safe.right);
+    const availH = Math.max(240, H - safe.top - safe.bottom);
+    const scale = Phaser.Math.Clamp(Math.min(availW / REF_W, availH / contentH), 0.45, 1);
+    content.setScale(scale);
+    content.setPosition(W / 2, Math.max(safe.top, (H - contentH * scale) / 2));
+    // Si ni con la escala mínima cabe (horizontal táctil de poca altura, p. ej. 851×393), el
+    // contenido se desplaza arrastrando o con la rueda: el quiz y los botones deben ser alcanzables.
+    this.scrollTop = content.y;
+    this.scrollMax = Math.max(0, contentH * scale - availH);
+  }
+
+  /** Desplaza el contenido `dy` px (solo cuando no cabe, ver layout). */
+  desplazar(dy) {
+    if (!this.scrollMax || !this.content) return;
+    this.content.y = Phaser.Math.Clamp(this.content.y + dy, this.scrollTop - this.scrollMax, this.scrollTop);
+  }
+
+  /** Avanza al siguiente paso (botón "Siguiente") y vuelve a armar la pantalla desde cero. */
+  avanzarPaso() {
+    if (this.pasoActual >= this.pasos.length - 1) return;
+    this.pasoActual += 1;
+    this.sfx('click');
+    this.layout(this.scale.width, this.scale.height);
+  }
+
+  /**
+   * Paso 1/N: cinta de resultado, nombre del nivel, estrellas, barra de celebración, panel de
+   * puntos/criaderos/tiempo/reputación y el bocadillo con retrato. Devuelve el nuevo borde
+   * inferior del contenido (mismo patrón que `crearRetoFamiliar`/`crearQuiz`).
+   */
+  construirPasoResultado(content, yStart, d, cfg, primeraVez) {
+    let y = yStart;
 
     // Cinta con el resultado
     const ribbonW = 460, ribbonH = 64;
@@ -174,11 +262,11 @@ export class LevelEndScene extends Phaser.Scene {
       this.stars.push(s);
       if (primeraVez) {
         s.setScale(0).setAlpha(0);
-        const t = this.time.delayedCall(350 + i * 250, () => {
+        const tm = this.time.delayedCall(350 + i * 250, () => {
           if (on) this.sfx('points');
           this.tweens.add({ targets: s, scale: 1, alpha: 1, duration: 320, ease: 'Back.easeOut' });
         });
-        this.timers.push(t);
+        this.timers.push(tm);
       }
     }
     y = starY + 40;
@@ -210,8 +298,9 @@ export class LevelEndScene extends Phaser.Scene {
     y = by + barH / 2 + 26;
 
     // Panel resumen
-    // 3 líneas a 42 px: con 118 de alto la última ("Tiempo") quedaba sobre el borde inferior.
-    const pw = 320, ph = 136;
+    // 3-4 líneas a 42 px: con 118 de alto la última ("Tiempo") quedaba sobre el borde inferior.
+    const conReputacion = d.reputacion !== null && d.reputacion !== undefined;
+    const pw = 320, ph = conReputacion ? 178 : 136;
     const py = y + ph / 2;
     const panel = this.add.graphics();
     panel.fillStyle(hex(PALETTE.marino), 0.95).fillRoundedRect(-pw / 2, py - ph / 2, pw, ph, 14);
@@ -221,7 +310,9 @@ export class LevelEndScene extends Phaser.Scene {
       fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.amarillo,
     }).setOrigin(0, 0.5);
     content.add(this.puntosLineText);
-    [t('end.criaderos', { n: `${d.limpios}${d.total ? ' / ' + d.total : ''}` }), t('end.tiempoLinea', { t: fmtTiempo(d.tiempo) })]
+    const lineasExtra = [t('end.criaderos', { n: `${d.limpios}${d.total ? ' / ' + d.total : ''}` }), t('end.tiempoLinea', { t: fmtTiempo(d.tiempo) })];
+    if (conReputacion) lineasExtra.push(t('end.reputacion', { n: d.reputacion }));
+    lineasExtra
       .forEach((l, i) => {
         const txt = this.add.text(-pw / 2 + 22, py - ph / 2 + 28 + (i + 1) * 42, l, {
           fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.blanco,
@@ -250,13 +341,22 @@ export class LevelEndScene extends Phaser.Scene {
       content.add(this.add.image(rx, rY, 'player', 'down_0').setScale(2));
     }
     y = byy + bh / 2 + 30;
+    return y;
+  }
 
-    // Aprendiste hoy
-    const anchoTexto = 460;
+  /**
+   * Paso 2/N: "Lo que aprendiste hoy" (3 datos de facts.js) + la pregunta de quiz.js. El título y
+   * la pregunta (ver `crearQuiz`) ahora llevan un contorno blanco: antes eran texto azul plano
+   * sobre el fondo semitransparente y se perdían (reporte del usuario 2026-09-16, con captura:
+   * "hay la letra azul que no logro ver, leerlo correctamente").
+   */
+  construirPasoAprendiste(content, yStart, anchoTexto) {
+    let y = yStart;
     content.add(this.add.text(0, y, t('end.aprendiste'), {
       fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.azulGorra,
+      stroke: PALETTE.blanco, strokeThickness: 4,
     }).setOrigin(0.5, 0));
-    y += 30;
+    y += 34;
     // Panel claro detrás de los bullets: texto marino sobre el fondo oscuro no se leía.
     const padH = 12, padV = 10;
     const hechosBg = this.add.graphics();
@@ -274,38 +374,10 @@ export class LevelEndScene extends Phaser.Scene {
     hechosBg.fillStyle(0x000000, 0.2).fillRoundedRect(-anchoTexto / 2, hechosTop + 3, anchoTexto, y - hechosTop, 12);
     hechosBg.fillStyle(hex(PALETTE.blanco), 0.96).fillRoundedRect(-anchoTexto / 2, hechosTop, anchoTexto, y - hechosTop, 12);
     hechosBg.lineStyle(2, hex(PALETTE.celeste), 1).strokeRoundedRect(-anchoTexto / 2, hechosTop, anchoTexto, y - hechosTop, 12);
-    y += 14;
+    y += 18;
 
     if (this.quiz) y = this.crearQuiz(y, anchoTexto);
-    y += 20;
-
-    // Botones ("Intentar de nuevo" solo si la jornada no terminó completa: epidemia o tiempo)
-    let btnY = y + 28;
-    if (d.resultado !== 'completo') {
-      content.add(this.makeButton(0, btnY, 300, 52, t('end.reintentar'), PALETTE.teja, PALETTE.tejaOscura, 20, () => this.finish('nivel:reintentar')));
-      btnY += 66;
-    }
-    content.add(this.makeButton(100, btnY, 230, 56, t('end.continuar'), PALETTE.verde, PALETTE.verdeOscuro, 22, () => this.finish('nivel:continuar')));
-    content.add(this.makeButton(-125, btnY, 190, 52, t('end.foto'), PALETTE.grisClaro, PALETTE.gris, 18, () => this.finish('nivel:foto')));
-    const contentH = btnY + 30;
-
-    // Escala todo para que quepa en el lienzo, en vez de reflujar cada sección por separado.
-    const safe = Layout.safe(this);
-    const availW = Math.max(240, W - safe.left - safe.right);
-    const availH = Math.max(240, H - safe.top - safe.bottom);
-    const scale = Phaser.Math.Clamp(Math.min(availW / REF_W, availH / contentH), 0.45, 1);
-    content.setScale(scale);
-    content.setPosition(W / 2, Math.max(safe.top, (H - contentH * scale) / 2));
-    // Si ni con la escala mínima cabe (horizontal táctil de poca altura, p. ej. 851×393), el
-    // contenido se desplaza arrastrando o con la rueda: el quiz y los botones deben ser alcanzables.
-    this.scrollTop = content.y;
-    this.scrollMax = Math.max(0, contentH * scale - availH);
-  }
-
-  /** Desplaza el contenido `dy` px (solo cuando no cabe, ver layout). */
-  desplazar(dy) {
-    if (!this.scrollMax || !this.content) return;
-    this.content.y = Phaser.Math.Clamp(this.content.y + dy, this.scrollTop - this.scrollMax, this.scrollTop);
+    return y;
   }
 
   /** Pregunta + 4 opciones; si ya se había respondido (por ejemplo tras un resize), reaplica el estado. */
@@ -313,7 +385,7 @@ export class LevelEndScene extends Phaser.Scene {
     let y = yStart;
     const pregunta = this.add.text(0, y, this.quiz.pregunta, {
       fontFamily: FONT, fontSize: 18, fontStyle: 'bold', color: PALETTE.azulGorra,
-      align: 'center', wordWrap: { width: anchoTexto },
+      stroke: PALETTE.blanco, strokeThickness: 4, align: 'center', wordWrap: { width: anchoTexto },
     }).setOrigin(0.5, 0);
     this.content.add(pregunta);
     y += pregunta.height + 16;
@@ -327,8 +399,11 @@ export class LevelEndScene extends Phaser.Scene {
       y += optH + gap;
     });
 
+    // Blanco + contorno oscuro (no PALETTE.gris): un gris oscuro sobre el fondo semitransparente
+    // era ilegible, mismo problema de contraste que el título de esta pantalla (ver JSDoc arriba).
     this.quizFeedback = this.add.text(0, y, this.quiz.explicacion || '', {
-      fontFamily: FONT, fontSize: 14, color: PALETTE.gris, align: 'center', wordWrap: { width: anchoTexto },
+      fontFamily: FONT, fontSize: 14, fontStyle: 'bold', color: PALETTE.blanco,
+      stroke: PALETTE.marino, strokeThickness: 3, align: 'center', wordWrap: { width: anchoTexto },
     }).setOrigin(0.5, 0).setAlpha(0);
     this.content.add(this.quizFeedback);
     y += this.quizFeedback.height + 8;
@@ -385,14 +460,116 @@ export class LevelEndScene extends Phaser.Scene {
     else this.quizFeedback.setAlpha(1);
   }
 
-  /** "+100" flotante junto al puntaje del resumen (solo visual, no toca SaveSystem ni el registry). */
+  /**
+   * Panel "Reto familiar de esta semana": 3 acciones reales de prevención (ver
+   * SaveSystem.retoActual(), que las toma de la pestaña 'prevención' de la biblioteca)
+   * con checkbox para marcarlas hechas en casa. Al completar las 3 otorga la insignia
+   * 'guardian-en-casa' (una sola vez) y reclama el reto (SaveSystem.reclamarReto()) para
+   * que la próxima jornada arme un set nuevo. Devuelve el nuevo borde inferior del contenido.
+   */
+  crearRetoFamiliar(yStart, anchoTexto) {
+    const reto = saveSystem.retoActual();
+    const pw = anchoTexto;
+    let y = yStart + 10;
+    // Contorno blanco/marino en vez de texto plano: mismo fix de contraste que el título de
+    // "Lo que aprendiste hoy" (ver JSDoc de construirPasoAprendiste).
+    this.content.add(this.add.text(0, y, t('end.reto.titulo'), {
+      fontFamily: FONT, fontSize: 20, fontStyle: 'bold', color: PALETTE.azulGorra,
+      stroke: PALETTE.blanco, strokeThickness: 4,
+    }).setOrigin(0.5, 0));
+    y += 34;
+    this.content.add(this.add.text(0, y, t('end.reto.subtitulo'), {
+      fontFamily: FONT, fontSize: 13, fontStyle: 'bold', color: PALETTE.blanco,
+      stroke: PALETTE.marino, strokeThickness: 3, align: 'center', wordWrap: { width: pw },
+    }).setOrigin(0.5, 0));
+    y += 26;
+
+    const panelBg = this.add.graphics();
+    this.content.add(panelBg);
+    const panelTop = y;
+    y += 12;
+
+    this.retoFilas = reto.acciones.map((id, i) => {
+      const fila = this.crearFilaReto(-pw / 2 + 12, y, pw - 24, id, reto.hechas[i], (hecho) => this.onToggleReto(i, hecho));
+      this.content.add(fila);
+      y += fila.alto + 8;
+      return fila;
+    });
+
+    this.retoMsg = this.add.text(0, y, t('end.reto.completo'), {
+      fontFamily: FONT, fontSize: 14, fontStyle: 'bold', color: PALETTE.verdeOscuro,
+      align: 'center', wordWrap: { width: pw - 24 },
+    }).setOrigin(0.5, 0).setAlpha(saveSystem.retoCompleto() ? 1 : 0);
+    this.content.add(this.retoMsg);
+    y += this.retoMsg.height + 8;
+    y += 6;
+
+    panelBg.fillStyle(0x000000, 0.2).fillRoundedRect(-pw / 2, panelTop + 3, pw, y - panelTop, 12);
+    panelBg.fillStyle(hex(PALETTE.blanco), 0.96).fillRoundedRect(-pw / 2, panelTop, pw, y - panelTop, 12);
+    panelBg.lineStyle(2, hex(PALETTE.celeste), 1).strokeRoundedRect(-pw / 2, panelTop, pw, y - panelTop, 12);
+    return y + 14;
+  }
+
+  /** Una fila del reto familiar: checkbox cuadrado + texto de la acción. */
+  crearFilaReto(x, y, w, id, hecho, onToggle) {
+    const h = 30;
+    const c = this.add.container(x, y);
+    const box = this.add.graphics();
+    const drawBox = (on) => {
+      box.clear();
+      box.fillStyle(hex(on ? PALETTE.verde : PALETTE.blanco), 1).fillRoundedRect(0, h / 2 - 12, 24, 24, 5);
+      box.lineStyle(2, hex(PALETTE.marino), 1).strokeRoundedRect(0, h / 2 - 12, 24, 24, 5);
+      if (on) {
+        box.lineStyle(3, hex(PALETTE.blanco), 1);
+        box.beginPath();
+        box.moveTo(5, h / 2).lineTo(11, h / 2 + 6).lineTo(19, h / 2 - 8);
+        box.strokePath();
+      }
+    };
+    drawBox(hecho);
+    const label = this.add.text(32, h / 2, t(`end.reto.accion.${id}`), {
+      fontFamily: FONT, fontSize: 14, color: PALETTE.marino, wordWrap: { width: w - 40 },
+    }).setOrigin(0, 0.5);
+    c.add([box, label]);
+    const alto = Math.max(h, label.height + 6);
+    c.setSize(...touchSize(w, alto)).setInteractive({ useHandCursor: true });
+    let estado = !!hecho;
+    c.on('pointerdown', () => {
+      estado = !estado;
+      drawBox(estado);
+      onToggle(estado);
+    });
+    c.alto = alto;
+    return c;
+  }
+
+  /** Click en un checkbox del reto familiar: guarda, y si se completó otorga la insignia. */
+  onToggleReto(indice, hecho) {
+    saveSystem.marcarRetoHecho(indice, hecho);
+    this.sfx('click');
+    const completo = saveSystem.retoCompleto();
+    if (this.retoMsg) this.retoMsg.setAlpha(completo ? 1 : 0);
+    if (completo) {
+      const nueva = Badges.otorgar('guardian-en-casa');
+      saveSystem.reclamarReto();
+      if (nueva) {
+        this.sfx('points');
+        if (this.retoMsg) this.pulso(this.retoMsg);
+      }
+    }
+  }
+
+  /**
+   * "+100" flotante junto a la pregunta (solo visual, no toca SaveSystem ni el registry). Antes
+   * animaba junto a `puntosLineText`, pero esa línea vive en el paso 'resultado' — al paginar la
+   * pantalla (ver JSDoc de la clase) el quiz quedó en un paso aparte donde esa línea ya no existe,
+   * así que ahora flota junto a la pregunta del quiz misma.
+   */
   animarBonus() {
-    this.puntosLineText.setText(t('end.puntos', { n: this.puntosMostrados }));
-    this.pulso(this.puntosLineText);
-    const bonus = this.add.text(
-      this.puntosLineText.x + this.puntosLineText.width + 10, this.puntosLineText.y, t('end.bonus'),
-      { fontFamily: FONT, fontSize: 18, fontStyle: 'bold', color: PALETTE.amarillo },
-    ).setOrigin(0, 0.5).setAlpha(0);
+    const bonus = this.add.text(0, this.quizFeedback.y - 8, t('end.bonus'), {
+      fontFamily: FONT, fontSize: 18, fontStyle: 'bold', color: PALETTE.amarillo,
+      stroke: PALETTE.marino, strokeThickness: 3,
+    }).setOrigin(0.5, 1).setAlpha(0);
     this.content.add(bonus);
     this.tweens.add({
       targets: bonus, y: bonus.y - 26, alpha: 1, duration: 260, ease: 'Sine.easeOut',

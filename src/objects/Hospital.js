@@ -3,16 +3,23 @@ import { PALETTE, hex } from '../data/palette.js';
 
 const W = 128, H = 128;
 
+/** Tamaño de cada icono de cama en la barra de capacidad (dibujado, sin asset nuevo). */
+const CAMA_W = 14, CAMA_H = 9, CAMA_GAP = 3;
+
 /**
  * Hospital: edificio fijo en el mapa (plan v4 §6), consecuencia visible del riesgo de epidemia.
  * Mismo patrón que `Estacion.js` (textura o fallback dibujado con Graphics, sin cuerpo físico de
  * colisión). A diferencia de la estación SEDES (naranja/teja, cartel "SEDES"), este edificio usa
- * blanco + techo celeste y una cruz de salud, para distinguirse a simple vista.
+ * blanco + techo celeste y una cruz de salud, para distinguirse a simple vista. Se ubica lejos de
+ * la estación (ver `GameScene.elegirPosicionHospital`) — no tiene sentido que ambas cosas estén
+ * pegadas, un hospital es otra institución.
  *
- * Groundwork únicamente: NO simula pacientes ni traslados (eso queda para una feature aparte,
- * más grande — ver plan v4 §6). Acá solo se mapea el valor de `EpidemicMeter` (0..100) a una
- * ocupación aproximada de camas, mostrada como texto ("4/6") y como un tinte suave cuando está
- * saturado.
+ * Mapea el valor de `EpidemicMeter` (0..100) a una ocupación de camas (0..`capacidad`), mostrada
+ * como una fila de iconos de cama (llenas en rojo, vacías en gris) + texto "N/6". No simula
+ * pacientes ni traslados individuales (eso es una feature aparte, más grande). Cuando llega a la
+ * capacidad emite `'saturado'` (una vez, no en cada frame) y `'desaturado'` al bajar de nuevo, para
+ * que `GameScene` reaccione (aviso, impacto en la reputación del barrio, etc.) sin que Hospital
+ * necesite saber nada de esos sistemas.
  */
 export class Hospital extends Phaser.Physics.Arcade.Sprite {
   constructor(scene, x, y) {
@@ -25,10 +32,38 @@ export class Hospital extends Phaser.Physics.Arcade.Sprite {
     this.capacidad = 6;
     this.ocupacion = 0;
 
-    this.texto = scene.add.text(x, y - H / 2 - 6, '0/6', {
+    this.texto = scene.add.text(x, y - H / 2 - 20, '0/6', {
       fontFamily: 'Arial, sans-serif', fontSize: 13, fontStyle: 'bold', color: PALETTE.blanco,
       stroke: PALETTE.linea, strokeThickness: 3,
     }).setOrigin(0.5, 1).setDepth(this.depth + 1);
+
+    // Barra de camas: se redibuja solo cuando cambia la ocupación (ver actualizar()).
+    this.barraCamas = scene.add.graphics().setDepth(this.depth + 1);
+    this.dibujarCamas();
+
+    this.once(Phaser.GameObjects.Events.DESTROY, () => {
+      this.texto?.destroy();
+      this.barraCamas?.destroy();
+    });
+  }
+
+  /** Fila de `capacidad` iconos de cama centrada sobre el edificio; llenas = ocupadas. */
+  dibujarCamas() {
+    const g = this.barraCamas.clear();
+    const total = this.capacidad;
+    const anchoFila = total * CAMA_W + (total - 1) * CAMA_GAP;
+    const x0 = this.x - anchoFila / 2;
+    const y0 = this.y - H / 2 - 12;
+    for (let i = 0; i < total; i++) {
+      const cx = x0 + i * (CAMA_W + CAMA_GAP);
+      const ocupada = i < this.ocupacion;
+      g.fillStyle(ocupada ? 0xe0453f : hex(PALETTE.grisClaro), 1)
+        .fillRoundedRect(cx, y0, CAMA_W, CAMA_H, 2);
+      g.lineStyle(1.2, hex(PALETTE.linea), 1).strokeRoundedRect(cx, y0, CAMA_W, CAMA_H, 2);
+      // "Almohada": un cuadradito más claro en el extremo izquierdo de la cama.
+      g.fillStyle(ocupada ? 0xffffff : hex(PALETTE.blanco), ocupada ? 0.55 : 0.4)
+        .fillRect(cx + 1.5, y0 + 1.5, CAMA_W * 0.28, CAMA_H - 3);
+    }
   }
 
   /** Devuelve la clave de textura del edificio, creando un fallback (una sola vez) si no existe. */
@@ -60,14 +95,20 @@ export class Hospital extends Phaser.Physics.Arcade.Sprite {
 
   /**
    * Mapea el valor del medidor de epidemia (0..100) a una ocupación aproximada de camas
-   * (sin simulación de pacientes aparte, ver plan v4 §6). Actualiza el texto y el tinte.
+   * (sin simulación de pacientes aparte, ver plan v4 §6). Actualiza el texto, la barra de camas
+   * y el tinte; emite `'saturado'`/`'desaturado'` solo al cruzar el límite (no en cada frame).
    */
   actualizar(epidemiaValor) {
     const nueva = Math.round((this.capacidad * Phaser.Math.Clamp(epidemiaValor, 0, 100)) / 100);
     if (nueva === this.ocupacion) return;
+    const saturadoAntes = this.estaSaturado();
     this.ocupacion = nueva;
     this.texto?.setText(`${this.ocupacion}/${this.capacidad}`);
-    this.setTint(this.estaSaturado() ? 0xffb3ab : 0xffffff);
+    this.dibujarCamas();
+    const saturadoAhora = this.estaSaturado();
+    this.setTint(saturadoAhora ? 0xffb3ab : 0xffffff);
+    if (saturadoAhora && !saturadoAntes) this.emit('saturado', this);
+    else if (!saturadoAhora && saturadoAntes) this.emit('desaturado', this);
   }
 
   /** ¿El hospital llegó a su capacidad de camas? */

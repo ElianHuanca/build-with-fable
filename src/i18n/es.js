@@ -34,12 +34,18 @@ export const es = {
   'lib.insignia.guardian.desc': 'Lee todas las tarjetas',
   'lib.insignia.fotografo': 'Fotógrafo',
   'lib.insignia.fotografo.desc': 'Fotografía un mosquito con la cámara IA',
+  'lib.insignia.detective-de-campo': 'Vigilante epidemiológico',
+  'lib.insignia.detective-de-campo.desc': 'Reporta las 4 especies con la cámara en una sola jornada',
+  'lib.insignia.guardian-en-casa': 'Guardián en casa',
+  'lib.insignia.guardian-en-casa.desc': 'Completa el reto familiar de la semana',
 
   // Cámara IA (demo simulada)
   'cam.titulo': 'Cámara IA',
   'cam.demo': 'DEMO',
   'cam.consejo': 'Apunta a un mosquito y toca el disparador',
   'cam.disparar': 'Disparar',
+  'cam.galeria': 'Galería',
+  'cam.fotoReal': 'Foto real',
   'cam.analizando': 'Analizando…',
   'cam.log1': 'Detectando patrones…',
   'cam.log2': 'Comparando con {n} especies…',
