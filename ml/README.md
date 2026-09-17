@@ -32,9 +32,9 @@ correspondiente y después `python ml/notebooks/build_notebook.py`.
 | 2 | Consolidación del dataset | ✅ **hecho** — `mosquito-merged-v1`, 76 459 imágenes |
 | 3 | Detector (YOLO) | ✅ **hecho** — mAP@50 test 0,977 (ver abajo) |
 | 4 | Clasificador (MobileNetV4) | ✅ **hecho** — F1-macro test 0,882 (ver abajo); INT8 no usable, se usa ONNX FP32 |
-| 5 | Servicio de inferencia en el Pi | 🟡 código listo (`pi/`), falta desplegar y medir latencia real |
-| 6 | Integración con el juego | ⬜ |
-| 7 | Flywheel de reentrenamiento | ⬜ |
+| 5 | Servicio de inferencia en el Pi | ✅ **desplegado y expuesto a internet** — ver `docs/DESPLIEGUE_INFERENCIA.md` |
+| 6 | Integración con el juego | 🟡 código listo en `CameraScene.js`, falta probar en dispositivo real y desplegar el juego en Vercel |
+| 7 | Flywheel de reentrenamiento | 🟡 las fotos ya se guardan (`ml/pi/subidas/`), falta el ciclo de etiquetado + reentreno |
 
 Notebooks en Kaggle (cuenta `smn404`, todos privados):
 - [dengue-invaders-consolidacion-dataset](https://www.kaggle.com/code/smn404/dengue-invaders-consolidacion-dataset) — versión 5, completa, sin GPU.
@@ -106,7 +106,18 @@ Todos los artefactos (`clasificador.pt`, `clasificador_fp32.onnx`, `clasificador
 `etiquetas.json`, `preprocesado.json`) están en el output de la versión 8 del notebook
 `dengue-invaders-entrenar-clasificador`.
 
-## Fase 5 — servicio de inferencia en el Pi (código listo, falta desplegar)
+## Fase 5 y 6 — desplegadas (2026-09-17, ver `docs/DESPLIEGUE_INFERENCIA.md`)
+
+El servicio de inferencia ya está corriendo en la Raspberry Pi real, detrás de gunicorn+systemd,
+y expuesto a internet con HTTPS vía **Tailscale Funnel**:
+`https://raspberrypi.tail8a5244.ts.net`. Latencia medida end-to-end (servicio ya caliente):
+**~520-940 ms por foto**. `CameraScene.js` ya llama a `/identify` de verdad cuando existe
+`VITE_INFERENCE_URL` (Fase 6) — falta probarlo en un dispositivo real y desplegar el juego en
+Vercel con esa variable configurada. Detalle completo, pendientes y decisiones (CORS, por qué
+Tailscale Funnel y no ngrok/Cloudflare/port-forwarding, la cabecera `X-Api-Key` pendiente de
+evaluar) en `docs/DESPLIEGUE_INFERENCIA.md` — no se repite acá para no desincronizarse.
+
+## Fase 5 — servicio de inferencia en el Pi (código fuente)
 
 ```
 ml/pi/
@@ -126,40 +137,10 @@ confianza de especie queda por debajo de `CLASIFICADOR_CONFIANZA_MINIMA` o el cl
 `no_es_mosquito`, la respuesta marca `"especie": "incierto"` en vez de forzar una de las 4
 especies — el problema del softmax que "siempre contesta" (plan §1.2).
 
-**Desplegar en el Pi:**
-
-```bash
-git clone <este repo> ~/build-with-fable   # o `git pull` si ya está clonado
-cd ~/build-with-fable/ml/pi
-python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-
-export KAGGLE_API_TOKEN="<token nuevo, rotado>"
-bash descargar_modelos.sh                  # deja modelos/ con detector.onnx, clasificador.onnx, etiquetas.json, preprocesado.json
-
-python servidor.py                          # prueba manual: POST /identify con una foto
-```
-
-Para dejarlo siempre encendido, ajustar las rutas de `dengue-invaders-inferencia.service` a
-donde haya quedado clonado el repo y:
-
-```bash
-sudo cp dengue-invaders-inferencia.service /etc/systemd/system/
-sudo systemctl enable --now dengue-invaders-inferencia.service
-```
-
-Probar el endpoint:
-
-```bash
-curl -F "foto=@/ruta/a/una/foto.jpg" http://localhost:8080/identify
-```
-
-**No usar el MCP de Kaggle en el Pi** para esto: en este mismo proyecto el OAuth del MCP de
-Kaggle expiraba seguido y terminamos usando la CLI con `KAGGLE_API_TOKEN` (ver Decisiones abajo).
-Para una descarga puntual de dos archivos en un dispositivo headless, la CLI con token es más
-simple y confiable — no hace falta conectar nada nuevo.
-
-**Pendiente:** medir la latencia real de `/identify` sobre una foto típica (backlog).
+**Ya desplegado y verificado en el Pi real** (gunicorn + systemd + Tailscale Funnel con HTTPS,
+subidas guardadas para reentreno). Instrucciones de despliegue/operación, la URL pública, CORS y
+todos los pendientes concretos están en `docs/DESPLIEGUE_INFERENCIA.md` — esa es la fuente de
+verdad actualizada, no estas líneas.
 
 ## Hardware del Pi (confirmado, ver `ml/pi/diagnostico_pi.txt`)
 
@@ -280,7 +261,21 @@ consolidación etiquetaría mal miles de imágenes o volvería a filtrar datos e
   contra `no_es_mosquito`).
 - **Cuantización INT8 rota** (ver arriba): probar `QuantType.QInt8` para activaciones o
   cuantización dinámica antes de volver a intentar estática con calibración distinta.
-- **Medir latencia real en el Pi** (Fase 5): ni el detector (`best.onnx`) ni el clasificador
-  (`clasificador_fp32.onnx`) se corrieron todavía sobre el hardware real — es la validación
-  pendiente más importante antes de dar por buena la elección de arquitectura. Criterio informal
-  del plan: ≤ 200 ms por foto para el detector.
+- **Latencia real en el Pi**: medida — ~520-940 ms por foto end-to-end (detector + clasificador
+  encadenados vía `/identify`, servicio ya "caliente"). Por encima del objetivo informal de
+  ≤200 ms del detector solo, pero es el número que importa para la experiencia del juego; no se
+  consideró bloqueante.
+- **Probar `identificarReal` en un dispositivo real** (Fase 6): implementado y compila, pero
+  nunca se probó en un navegador de verdad (celular/notebook apuntando al Pi) — ver
+  `docs/DESPLIEGUE_INFERENCIA.md` §6.2.
+- **CORS con el dominio real de Vercel**: `ORIGENES_PERMITIDOS` en `ml/pi/servidor.py` todavía
+  tiene `dengue-invaders.vercel.app` como placeholder — actualizar cuando el juego tenga su
+  dominio real, o `identificarReal` va a fallar por CORS.
+- **Endpoint sin autenticación**: `/identify` es público en `https://raspberrypi.tail8a5244.ts.net`
+  sin ninguna clave — evaluar la cabecera `X-Api-Key` si empieza a recibir tráfico no deseado (ver
+  `docs/DESPLIEGUE_INFERENCIA.md` §5).
+- **Múltiples detecciones por foto**: si `/identify` devuelve varias cajas, el juego solo usa la
+  de mayor confianza y descarta el resto sin avisar al jugador — revisar si vale la pena mostrar
+  todas o pedir una foto con un solo mosquito.
+- **`ml/pi/subidas/` crece sin límite**: cada foto recibida se guarda para el flywheel de la Fase 7
+  sin rotación ni límite de espacio — vigilar disco en el Pi.
