@@ -19,10 +19,10 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$DESTINO"
 
 echo "Bajando salida del detector..."
-python -m kaggle kernels output smn404/dengue-invaders-entrenar-detector -p "$TMP/detector"
+kaggle kernels output smn404/dengue-invaders-entrenar-detector -p "$TMP/detector"
 
 echo "Bajando salida del clasificador..."
-python -m kaggle kernels output smn404/dengue-invaders-entrenar-clasificador -p "$TMP/clasificador"
+kaggle kernels output smn404/dengue-invaders-entrenar-clasificador -p "$TMP/clasificador"
 
 buscar() { find "$1" -iname "$2" -print -quit; }
 
