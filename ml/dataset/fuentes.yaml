@@ -1,0 +1,330 @@
+# Fuentes del dataset consolidado (plan v5, Fase 1). Inventario real verificado el 2026-09-16
+# vía búsqueda en Roboflow Universe y Kaggle.
+#
+# TODAS las licencias listadas son permisivas (CC BY 4.0 / MIT / CDLA-Permissive / dominio
+# público). CC BY 4.0 **exige atribución**: ml/dataset/ATRIBUCION.md se genera a partir de este
+# archivo y debe acompañar cualquier publicación del dataset o del modelo.
+#
+# `tier` controla qué se descarga:
+#   1 = núcleo, alto valor, se descarga siempre
+#   2 = complementario, mejora cobertura/variedad
+#   3 = opcional / pesado / a evaluar
+#
+# `version: null` significa que la búsqueda no devolvió versión publicada: el script prueba la
+# última disponible y avisa si falla.
+
+version_inventario: 1
+fecha_inventario: '2026-09-16'
+
+roboflow:
+  # ---------------------------------------------------------------- Etapa A: detector ---------
+  - slug: mosquitos001/mosquito-4ocly
+    version: 12
+    imagenes: 9895
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: [mosquito]
+    tier: 1
+    uso: [detector]
+    nota: >-
+      Clase única, el dataset más grande de "hay un mosquito acá". Base del detector.
+      77 descargas y un modelo entrenado: señal de que está razonablemente curado.
+
+  - slug: trapmos/mosquito-5wsj2
+    version: 1
+    imagenes: 10000
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: ['Aedes aegypti', 'Aedes albopictus']
+    tier: 1
+    uso: [detector, clasificador]
+    nota: >-
+      El nombre del workspace ("trapmos") sugiere imágenes de TRAMPA, que es exactamente la
+      distribución de destino del Pi. Prioritario para el test set "tipo campo" (Fase 2).
+
+  # ---------------------------------------------------------------- Etapa B: clasificador -----
+  - slug: mosquitos-u6ipx/mosquito-detection-dataset
+    version: 4
+    imagenes: 7672
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: [aegypti, albopictus, anopheles, culex, culiseta, japonicus-koreicus]
+    tier: 1
+    uso: [detector, clasificador]
+    nota: >-
+      La mejor cobertura de una sola fuente: cubre las 4 especies objetivo + 2 que caen en
+      'otro_mosquito'. Núcleo del clasificador.
+
+  - slug: license-plate-detection-ldjnv/mosquitos-classification
+    version: 1
+    imagenes: 7239
+    tipo: classification
+    licencia: CC BY 4.0
+    clases: [Ae-aegypti, Ae-albopictus, Ae-vexans, An-tessellatus, Cx-quinquefasciatus, Cx-vishnui, Misc]
+    tier: 3   # bajado de 1: ver nota
+    estado: 'FALLA 2026-09-16 — la API responde "does not exist or cannot be loaded due to missing permissions" aunque sigue listado en Universe (probablemente sin versión exportable pública). Probar fork vía MCP (projects_fork) si hace falta.'
+    uso: [clasificador]
+    nota: >-
+      Cubre los 3 géneros + 'Misc'. El nombre del workspace no tiene relación con el contenido
+      (workspace reutilizado); el dataset sí es de mosquitos.
+
+  - slug: mosquito-tidps/mosquito-detection-yr7y3
+    version: 1
+    imagenes: 7211
+    tipo: classification
+    licencia: CC BY 4.0
+    clases: ['Aedes aegypti landing', 'Aedes aegypti smashed', 'Aedes albopictus landing',
+             'Aedes albopictus smashed', 'Culex landing', 'Culex quinquefasciatus landing',
+             'Culex quinquefasciatus smashed', 'Culex smashed', 'aegypti landing',
+             'aegypti smashed', 'albopictus landing', 'albopictus smashed']
+    tier: 1
+    uso: [clasificador]
+    nota: >-
+      Los sufijos landing/smashed los limpia `ruido_sufijos` de taxonomia.yaml. Ojo: 'smashed'
+      (mosquito aplastado) es una distribución distinta a la de campo — útil para variedad,
+      pero NO debe dominar el test set.
+
+  - slug: mosquito-itce6/mosquito_annotation
+    version: 11
+    imagenes: 6800
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: ['Aedes aegypti Female', 'Aedes aegypti Male', 'Aedes albopictus Female',
+             'Aedes albopictus Male', 'Aedes vittatus Female', 'Aedes vittatus Male',
+             'Aedes_aegypti', 'Aedes_albobictus', 'Aedes_vittatus', 'Anopheles culiciformis',
+             'Anopheles jamesii', 'Anopheles tessellatus', 'Anopheles_barbirostris',
+             'Anopheles_culicifacies', 'Anopheles_stephensi', 'Anopheles_subpictus',
+             'Anopheles_vagus', 'Armigeres_subalbatus', 'Culex quinquefasciatus Male',
+             'Culex tritaeniorhynchus Female']
+    tier: 1
+    uso: [detector, clasificador]
+    nota: >-
+      La fuente MÁS valiosa para 'anopheles': 8 especies distintas del género, que es la clase
+      rara en todas las demás. Además trae sexo (ver pregunta abierta §11.3 del plan).
+
+  - slug: mosquitoscan/mosquito-detection-esjag
+    version: 2
+    imagenes: 4252
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: [aegypti, albopictus, culiseta, japonicus-koreicus]
+    tier: 1
+    uso: [detector, clasificador]
+
+  - slug: angelomontalban629-gmail-com/aedes-species-classifier-clean
+    version: 1
+    imagenes: 3775
+    tipo: classification
+    licencia: CC BY 4.0
+    clases: ['Aedes Aegypti', 'Aedes Albopictus']
+    tier: 1
+    uso: [clasificador]
+    nota: "El autor lo llama 'clean': verificar en Fase 2 si efectivamente está mejor curado."
+
+  - slug: tickcitizenscience/mosquito-qi01f
+    version: 1
+    imagenes: 2792
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: [aegypti, albopictus, albopictus-aegypti]
+    tier: 2
+    uso: [detector, clasificador]
+    nota: >-
+      Ciencia ciudadana => fotos tomadas por gente común con celular. Alto valor para la brecha
+      laboratorio↔campo (PLAN_V5 §1.1). La clase 'albopictus-aegypti' es ambigua: se descarta
+      para el clasificador y se usa solo como 'mosquito' en el detector.
+
+  - slug: alves-world/dengu-gk6lv
+    version: 2
+    imagenes: 1367
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: ['Aedes aegypti', 'Aedes albopictus', 'Culex quinquefasciatus']
+    tier: 2
+    uso: [detector, clasificador]
+
+  - slug: mozziev3/mozziev3
+    version: 2
+    imagenes: 1003
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: ['Aedes aegypti Female', 'Aedes aegypti Male', 'Aedes albopictus Female',
+             'Aedes albopictus Male', 'Non Aedes']
+    tier: 2
+    uso: [detector, clasificador]
+    nota: "'Non Aedes' → otro_mosquito (es mosquito, no es Aedes). No confundir con no_es_mosquito."
+
+  - slug: denguemetric-o9fa8/aedes-classification
+    version: 2
+    imagenes: 931
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: ['aedes aegypti ', 'aedes albopictus']
+    tier: 2
+    uso: [detector, clasificador]
+
+  - slug: jhon-mark-blay/anopheles
+    version: 1
+    imagenes: 957
+    tipo: classification
+    licencia: Public Domain
+    clases: [coustani, crucians, funestus, gambiae, punctipennis, quadrimaculatus]
+    tier: 1
+    uso: [clasificador]
+    nota: >-
+      6 especies de Anopheles sin el género en la etiqueta: taxonomia.yaml las captura por
+      patrón. Segunda fuente clave para la clase rara.
+
+  - slug: ks-job/anopheles-nmkvs
+    version: 1
+    imagenes: 215
+    tipo: instance-segmentation
+    licencia: CC BY 4.0
+    clases: [anopheles]
+    tier: 2
+    uso: [detector, clasificador]
+    nota: "Segmentación: el script usa solo la caja envolvente de cada máscara."
+
+  - slug: sebskie-uvuoi/mosquito-6vtkg
+    version: 1
+    imagenes: 1400
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: ['Aedes Aegypti', 'Aedes Albopictus']
+    tier: 2
+    uso: [detector, clasificador]
+    nota: >-
+      ⚠️ Mismo workspace que val-ust52: probablemente sean el mismo material partido en dos.
+      La deduplicación por pHash de la Fase 2 debe resolverlo — verificar el reporte.
+
+  - slug: sebskie-uvuoi/val-ust52
+    version: 2
+    imagenes: 599
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: ['Aedes Aegypti', 'Aedes Albopictus']
+    tier: 3
+    uso: [detector, clasificador]
+    nota: "⚠️ Ver nota de mosquito-6vtkg. El nombre 'val' sugiere que es el split de validación."
+
+  - slug: mosq-nj23o/mosqkito
+    version: 1
+    imagenes: 1000
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: [AEDES, 'Aedes Aegypti', Mosquito, aegypti, albopictus, anopheles, culex,
+             culiseta, japonicus-koreicus, mosquito]
+    tier: 3
+    uso: [detector, clasificador]
+    nota: >-
+      Mezcla etiquetas de varias fuentes (incluye 'AEDES' ambiguo). Alto riesgo de solapamiento
+      con otros datasets de esta lista: usar solo si la dedup lo deja limpio.
+
+  - slug: al-45kdp/mosquito-species
+    version: null
+    imagenes: 78
+    tipo: object-detection
+    licencia: CC BY 4.0
+    clases: ['Culex erythrothorax', 'Culex tarsalis', 'Culiseta inornata', Debris, Insect, Mosquito]
+    tier: 3
+    uso: [detector, clasificador]
+    nota: >-
+      Chico, pero es de las pocas fuentes con 'Debris' e 'Insect' — negativos reales de trampa,
+      justo lo que necesita la clase no_es_mosquito.
+
+  # ---------------------------------------------------------------- Negativos duros -----------
+  # `clase_por_defecto: no_es_mosquito` → toda etiqueta que NO resuelva a mosquito en
+  # taxonomia.yaml cae en no_es_mosquito. Si alguna sí resuelve (ej. la clase 'Mosquito' de un
+  # dataset de insectos), manda la taxonomía. Probado en test_taxonomia.py.
+  # Agregados 2026-09-16: la corrida v3 dejó no_es_mosquito con 0 imágenes.
+
+  - slug: maximilian-sittinger/insect_detect_classification
+    version: 2
+    imagenes: 2422
+    tipo: classification
+    licencia: CC BY 4.0
+    clases: [episyr_balt, fly, hbee, hovfly, other, shadow, wasp]
+    clase_por_defecto: no_es_mosquito
+    tier: 1
+    uso: [clasificador]
+    nota: >-
+      El negativo MÁS valioso: sale de "Insect Detect", una cámara trampa DIY de insectos. Las
+      clases 'shadow' y 'other' son exactamente los falsos positivos que va a ver una trampa.
+      Ojo: la v2 del mismo autor es BY-NC-SA — no usar esa.
+
+  - slug: comsats-lbpbe/insects-2fw0a
+    version: 2
+    imagenes: 1917
+    tipo: classification
+    licencia: CC BY 4.0
+    clases: ['Africanized Honey Bees (Killer Bees)', Aphids, Armyworms, 'Fruit Flies', Grasshopper,
+             Mosquito, Sawfly, 'Spider Mites', Thrips, '... (18 en total)']
+    clase_por_defecto: no_es_mosquito
+    tier: 1
+    uso: [clasificador]
+    nota: "Trae una clase 'Mosquito': resuelve a mosquito_sp y queda FUERA de los negativos."
+
+  - slug: neung-s7rrh/moth-juac0
+    version: 2
+    imagenes: 7702
+    tipo: classification
+    licencia: CC BY 4.0
+    clases: ['50 especies de polillas']
+    clase_por_defecto: no_es_mosquito
+    max_imagenes: 1200
+    tier: 1
+    uso: [clasificador]
+    nota: >-
+      Las polillas chicas se confunden con mosquitos en trampas nocturnas. Tope de 1 200 para que
+      no dominen la clase frente a los negativos de cámara trampa.
+
+  - slug: mosquito1/americano-y8n5a
+    version: 2
+    imagenes: 14640
+    tipo: classification
+    licencia: CC BY 4.0
+    clases: [aedes, non_aedes]
+    max_imagenes: 1500   # sin tope, 'non_aedes' triplicaría otro_mosquito (2 235 en la corrida v3)
+    tier: 2
+    uso: [clasificador]
+    nota: >-
+      El dataset más grande del inventario. 'aedes' es ambiguo (no dice especie) => se descarta
+      para el clasificador; el valor está en 'non_aedes' como otro_mosquito. Revisar una muestra
+      antes de confiar: si 'non_aedes' incluye insectos no-culícidos, parte va a no_es_mosquito.
+
+kaggle:
+  - slug: ahsanatiq/mosquitos-classification-images
+    imagenes: 3000
+    licencia: MIT
+    requiere_input: true   # corridas no interactivas: agregar en el editor (Add Input → Datasets)
+    clases: [AEDES, ANOPHELES, CULEX]
+    tier: 1
+    uso: [clasificador]
+    nota: >-
+      Etiquetas a nivel GÉNERO. 'ANOPHELES' y 'CULEX' se usan directo (son clases canónicas);
+      'AEDES' es ambiguo => aedes_sp, solo detector. Licencia MIT, la más permisiva del lote.
+
+  - slug: cyberthorn/chula-mosquito-classification
+    imagenes: null
+    licencia: CDLA-Permissive-1.0
+    clases: ['6 especies de Tailandia + misceláneo']
+    tier: 3
+    uso: [clasificador]
+    nota: >-
+      5,5 GB de microscopía. Muy limpio pero MUY lejos de la distribución de campo: si domina el
+      entrenamiento, empeora el rendimiento real. Evaluar recién en Fase 4 y con peso bajo.
+
+# ---------------------------------------------------------------- Pendiente de buscar ---------
+faltantes:
+  - que: Dataset de insectos genéricos (moscas, polillas, arañas) para 'no_es_mosquito'
+    por_que: >-
+      Hoy los negativos salen solo de 'Debris'/'Insect' de al-45kdp (78 imágenes) y quizá de
+      'non_aedes'. Es poco: el modelo va a rechazar mal las fotos de otros bichos, que en campo
+      van a ser frecuentes.
+    donde_buscar: [Roboflow Universe 'insects', Kaggle 'insect classification', iNaturalist]
+
+  - que: Fotos propias de trampas del proyecto
+    por_que: >-
+      Definirían el test set "tipo campo" real. Confirmado con el usuario (2026-09-16) que
+      todavía no existen; hasta que existan, el sustituto es trapmos + tickcitizenscience.
+    estado: no disponible

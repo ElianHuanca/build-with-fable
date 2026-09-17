@@ -1,0 +1,17 @@
+{
+  "id": "smn404/dengue-invaders-entrenar-detector",
+  "title": "Dengue Invaders Entrenar Detector",
+  "code_file": "02_entrenar_detector.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "smn404/mosquito-merged-v1"
+  ],
+  "competition_sources": [],
+  "model_sources": [],
+  "kernel_sources": []
+}

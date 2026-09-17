@@ -1,0 +1,15 @@
+{
+  "id": "smn404/dengue-invaders-consolidacion-dataset",
+  "title": "Dengue Invaders Consolidacion Dataset",
+  "code_file": "01_consolidar_dataset.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

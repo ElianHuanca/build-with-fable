@@ -1,0 +1,17 @@
+{
+  "id": "smn404/dengue-invaders-entrenar-clasificador",
+  "title": "Dengue Invaders Entrenar Clasificador",
+  "code_file": "03_entrenar_clasificador.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": false,
+  "enable_tpu": false,
+  "enable_internet": true,
+  "dataset_sources": [
+    "smn404/mosquito-merged-v1"
+  ],
+  "competition_sources": [],
+  "model_sources": [],
+  "kernel_sources": []
+}

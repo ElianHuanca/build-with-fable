@@ -1,0 +1,197 @@
+# Taxonomía canónica del modelo de reconocimiento de mosquitos (plan v5, Fase 0).
+#
+# Cada dataset público etiqueta distinto ("Aedes aegypti", "aegypti", "Ae-aegypti",
+# "Aedes aegypti landing", "Aedes_aegypti", "AEDES"...). Este archivo es la única fuente de
+# verdad para mapear todo eso a un conjunto fijo de clases.
+#
+# Lo aplica ml/notebooks/01_consolidar_dataset.py. Al cambiar algo acá hay que regenerar el
+# dataset consolidado y anotar la versión nueva (ver `version` abajo).
+
+version: 1
+
+# --- Clases del CLASIFICADOR de especie (Etapa B) --------------------------------------------
+# 'otro_mosquito' y 'no_es_mosquito' no son relleno: sin ellas el softmax de 4 clases responde
+# una especie objetivo ante CUALQUIER foto (una mosca, un dedo). Ver PLAN_V5 §1.2.
+clases_canonicas:
+  - aegypti          # Aedes aegypti — vector principal del dengue
+  - albopictus       # Aedes albopictus — mosquito tigre
+  - culex            # Culex spp.
+  - anopheles        # Anopheles spp.
+  - otro_mosquito    # culícido real, pero fuera de las 4 objetivo (Culiseta, Armigeres, Ae. vexans...)
+  - no_es_mosquito   # cualquier otra cosa: otros insectos, basura, fondo
+
+# --- Etiquetas AMBIGUAS ------------------------------------------------------------------------
+# Sirven para entrenar el detector (son mosquitos), pero NO para el clasificador: no se puede
+# aprender a separar aegypti de albopictus con imágenes rotuladas solo "AEDES".
+# El script las incluye en el dataset del detector y las descarta en el del clasificador.
+ambiguas:
+  - aedes_sp         # "AEDES" sin especie
+  - mosquito_sp      # "mosquito", "objects", genéricos
+
+# --- Detector (Etapa A) ------------------------------------------------------------------------
+# Todo lo que sea mosquito colapsa a una sola clase: el detector solo responde "acá hay uno".
+detector:
+  clase_unica: mosquito
+  incluye:
+    - aegypti
+    - albopictus
+    - culex
+    - anopheles
+    - otro_mosquito
+    - aedes_sp
+    - mosquito_sp
+  excluye:
+    - no_es_mosquito
+
+# --- Mapeo ------------------------------------------------------------------------------------
+# El script normaliza cada etiqueta antes de comparar: minúsculas, sin acentos, separadores
+# (_ - . espacios) colapsados a un espacio, y se le quitan los sufijos de `ruido_sufijos`.
+# Luego prueba `exactos` (igualdad) y después `patrones` (regex, re.search).
+# El orden importa: gana la primera clase que haga match, en el orden de este archivo.
+
+ruido_sufijos:
+  # Estados/atributos que algunos datasets pegan a la especie y no cambian la clase.
+  - landing
+  - smashed
+  - female
+  - male
+  - hembra
+  - macho
+  - adult
+  - larvae
+
+mapeo:
+  aegypti:
+    exactos:
+      - aegypti
+      - aedes aegypti
+      - ae aegypti
+      - aedes aegypti
+    patrones:
+      - 'aedes +aegypti'
+      - '^ae[ -]*aegypti$'
+      - '^aegypti$'
+
+  albopictus:
+    exactos:
+      - albopictus
+      - aedes albopictus
+      - ae albopictus
+      - aedes albobictus     # error de tipeo real en mosquito-itce6/mosquito_annotation
+    patrones:
+      - 'aedes +alb[o0]'
+      - '^ae[ -]*albopictus$'
+      - '^albopictus$'
+      - 'tiger mosquito'
+
+  culex:
+    exactos:
+      - culex
+      - cx
+    patrones:
+      - '^culex'
+      - '^cx[ -]'
+      - 'quinquefasciatus'
+      - 'tritaeniorhynchus'
+      - 'vishnui'
+      - 'erythrothorax'
+      - 'tarsalis'
+      - 'pipiens'
+
+  anopheles:
+    exactos:
+      - anopheles
+      - an
+    patrones:
+      - '^anopheles'
+      - '^an[ -]'
+      # Especies de Anopheles que algunos datasets rotulan sin el género:
+      - 'gambiae'
+      - 'funestus'
+      - 'stephensi'
+      - 'coustani'
+      - 'crucians'
+      - 'punctipennis'
+      - 'quadrimaculatus'
+      - 'barbirostris'
+      - 'culicifacies'
+      - 'subpictus'
+      - 'tessellatus'
+      - 'culiciformis'
+      - 'jamesii'
+      - 'vagus'
+
+  otro_mosquito:
+    exactos:
+      - culiseta
+      - armigeres
+      - non aedes
+      - non_aedes
+      - other mosquito
+    patrones:
+      - 'culiseta'
+      - 'japonicus'
+      - 'koreicus'
+      - 'armigeres'
+      - 'vexans'
+      - 'vittatus'
+      - 'mansonia'
+      - 'psorophora'
+      # "non aedes"/"no aedes" es un mosquito que no es Aedes — NO es "no es mosquito".
+      - '^non[ -]*aedes$'
+      - '^no[ -]*aedes$'
+
+  no_es_mosquito:
+    exactos:
+      - debris
+      - background
+      - fondo
+      - basura
+      - not mosquito
+      - no mosquito
+    patrones:
+      - '^debris$'
+      - '^background$'
+      - '^insect$'         # "Insect" genérico en al-45kdp: insecto no-mosquito
+      - '^other insect'
+      - '^fly$'
+      - '^spider$'
+      - '^moth$'
+
+  # --- Ambiguas (detector sí, clasificador no) ---
+  aedes_sp:
+    exactos:
+      - aedes
+      - ae
+    patrones:
+      - '^aedes$'
+      - '^aedes sp'
+
+  mosquito_sp:
+    exactos:
+      - mosquito
+      - mosquitos
+      - mosquitoes
+      - objects
+      - object
+      - moustique
+      - ka
+    patrones:
+      - '^mosquito'
+      - '^mosquitos?$'
+      - '^object'
+
+# --- Etiquetas a DESCARTAR por completo -------------------------------------------------------
+# Ruido de datasets mal curados: no aportan ni al detector ni al clasificador.
+descartar:
+  exactos:
+    - unlabeled
+    - ''
+  patrones:
+    - '^={3,}'           # "==============================" en dataset-merging/mosquito-cxdah
+    - '^\d+$'            # clases numéricas sueltas ("0", "1", "2")
+    # Nombre de export que quedó como clase en mosq-nj23o/mosqkito.
+    # OJO: los patrones se evalúan contra la etiqueta YA NORMALIZADA (sin guiones ni puntos),
+    # así que "- Mosquito Detection - 2023-10-18 12-12am" llega acá como
+    # "mosquito detection 2023 10 18 12 12am". Sin la fecha, caería en 'mosquito_sp'.
+    - '^mosquito detection \d{4}'

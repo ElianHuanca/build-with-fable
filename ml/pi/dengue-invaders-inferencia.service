@@ -1,0 +1,13 @@
+[Unit]
+Description=Dengue Invaders - servicio de inferencia (detector + clasificador de mosquitos)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/admin/build-with-fable/ml/pi
+ExecStart=/home/admin/build-with-fable/ml/pi/venv/bin/python servidor.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

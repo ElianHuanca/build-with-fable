@@ -1,0 +1,77 @@
+Diagnóstico de la Raspberry Pi 4 (8GB) del proyecto, 2026-09-17.
+Recolectado desde el propio Pi vía Claude Code. Ver docs/PLAN_V5_MODELO_IA.md §11 pregunta 3.
+
+=== uname ===
+Linux raspberrypi 6.1.21-v8+ #1642 SMP PREEMPT Mon Apr  3 17:24:16 BST 2023 aarch64 GNU/Linux
+
+=== os-release ===
+PRETTY_NAME="Debian GNU/Linux 11 (bullseye)"
+NAME="Debian GNU/Linux"
+VERSION_ID="11"
+VERSION="11 (bullseye)"
+VERSION_CODENAME=bullseye
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+
+=== python ===
+Python 3.9.2
+/usr/bin/python3
+pip 23.1.2 from /home/admin/.local/lib/python3.9/site-packages/pip (python 3.9)
+
+=== memoria ===
+               total        used        free      shared  buff/cache   available
+Mem:           7,6Gi       4,7Gi       931Mi       116Mi       1,9Gi       2,6Gi
+Swap:          2,0Gi          0B       2,0Gi
+
+=== disco ===
+S.ficheros     Tamaño Usados  Disp Uso% Montado en
+/dev/root         59G    43G   14G  76% /
+
+=== cpu ===
+4
+
+=== camara ===
+/dev/video10
+/dev/video11
+/dev/video12
+/dev/video13
+/dev/video14
+/dev/video15
+/dev/video16
+/dev/video18
+/dev/video19
+/dev/video20
+/dev/video21
+/dev/video22
+/dev/video23
+/dev/video31
+supported=1 detected=0, libcamera interfaces=0
+No cameras available!
+
+=== systemd ===
+systemd 247 (247.3-7+deb11u7)
+
+=== red ===
+192.168.100.129 2800:cd0:4600:200:c581:bc1c:6cb8:8dd
+
+=== venv ===
+venv OK
+
+--------------------------------------------------------------------------------------
+LECTURA (2026-09-17)
+--------------------------------------------------------------------------------------
+- aarch64 confirmado: kernel "6.1.21-v8+" (naming propio de Raspberry Pi Foundation, sufijo
+  v8 = ARMv8/64 bits) + PRETTY_NAME="Debian..." (no "Raspbian...") es la firma exacta de
+  Raspberry Pi OS de 64 bits — la variante de 32 bits se identifica como Raspbian, no Debian.
+  → Runtime confirmado: ONNX Runtime. No hace falta TFLite ni reinstalar el sistema.
+- Python 3.9.2 vía apt + pip de usuario en ~/.local. onnxruntime publica wheels manylinux2014
+  aarch64 para cp39: no debería hacer falta compilar nada.
+- 14 GB libres de disco: sobra para los pesos (5-25 MB) y el servicio.
+- RAM: "available" (2,6 GiB) es lo que importa, no "free" — hay margen para un servicio liviano,
+  pero con 4,7 GiB ya en uso antes de arrancar nada, vale la pena revisar qué está corriendo si
+  el servicio de la Fase 5 va a ser un proceso siempre encendido (systemd).
+- Sin cámara detectada: los /dev/video1x-2x son nodos de códec/ISP del SoC (siempre presentes en
+  Raspberry Pi OS), no un sensor. Pendiente: ¿este Pi es una trampa con cámara propia, o es solo
+  el servidor de inferencia? Define el diseño de la Fase 5 (ver plan §11 pregunta 7).
