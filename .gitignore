@@ -1,3 +1,5 @@
 node_modules
 dist
 __pycache__
+ml/pi/venv
+ml/pi/modelos
