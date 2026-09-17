@@ -5,7 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/home/admin/build-with-fable/ml/pi
-ExecStart=/home/admin/build-with-fable/ml/pi/venv/bin/python servidor.py
+ExecStart=/home/admin/build-with-fable/ml/pi/venv/bin/gunicorn --workers 2 --preload --timeout 60 --bind 0.0.0.0:8080 servidor:app
 Restart=on-failure
 RestartSec=5
 
